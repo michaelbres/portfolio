@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    @apply bg-white text-black font-sans;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* Pop-art card */
+  .comic-card {
+    @apply border-4 border-black bg-white;
+    box-shadow: 6px 6px 0 #000;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .comic-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 8px 8px 0 #000;
+  }
+
+  /* Pop-art button */
+  .btn-pop {
+    @apply border-4 border-black font-bangers tracking-widest uppercase px-6 py-2 text-lg cursor-pointer;
+    box-shadow: 4px 4px 0 #000;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .btn-pop:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 #000;
+  }
+  .btn-pop:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #000;
+  }
+
+  /* Savant-style table */
+  .savant-table {
+    @apply w-full text-sm border-collapse;
+  }
+  .savant-table th {
+    @apply bg-sv-dark text-white px-3 py-2 text-left whitespace-nowrap cursor-pointer select-none;
+  }
+  .savant-table th:hover {
+    @apply bg-sv-blue;
+  }
+  .savant-table td {
+    @apply px-3 py-2 border-b border-gray-200 whitespace-nowrap;
+  }
+  .savant-table tr:hover td {
+    @apply bg-blue-50;
+  }
+
+  /* Halftone hero background */
+  .halftone-bg {
+    background-image: radial-gradient(circle, #00000015 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+}
