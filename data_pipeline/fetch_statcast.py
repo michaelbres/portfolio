@@ -22,8 +22,8 @@ import traceback
 from datetime import date, timedelta, datetime
 
 import pandas as pd
+import psycopg2.extras
 from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 # Allow imports from backend
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
@@ -83,16 +83,29 @@ def fetch_and_upsert(date_str: str, db):
     if not rows:
         return 0
 
-    # Insert in chunks to avoid SSL timeouts on Render's free tier
-    CHUNK = 100
-    total_inserted = 0
-    for i in range(0, len(rows), CHUNK):
-        chunk = rows[i : i + CHUNK]
-        stmt = pg_insert(StatcastPitch.__table__).values(chunk)
-        stmt = stmt.on_conflict_do_nothing(constraint="uq_pitch")
-        with engine.begin() as conn:
-            result = conn.execute(stmt)
-        total_inserted += result.rowcount
+    # Column names (excluding auto-generated id and created_at)
+    cols = [c.name for c in StatcastPitch.__table__.columns
+            if c.name not in ("id", "created_at")]
+
+    insert_sql = f"""
+        INSERT INTO statcast_pitches ({", ".join(cols)})
+        VALUES %s
+        ON CONFLICT ON CONSTRAINT uq_pitch DO NOTHING
+    """
+
+    # Build list of tuples in column order
+    values = [tuple(r.get(c) for c in cols) for r in rows]
+
+    # Use psycopg2 execute_values — far more efficient than SQLAlchemy bulk insert
+    # and avoids the massive multi-row SQL that drops SSL connections on free tier
+    with engine.connect() as sa_conn:
+        raw = sa_conn.connection
+        with raw.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur, insert_sql, values, page_size=50
+            )
+            total_inserted = cur.rowcount
+        raw.commit()
 
     print(f"  {date_str}: {len(rows)} pitches fetched, {total_inserted} new rows inserted")
     return len(rows)
