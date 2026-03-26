@@ -83,15 +83,18 @@ def fetch_and_upsert(date_str: str, db):
     if not rows:
         return 0
 
-    # Upsert — skip duplicates (game_pk / at_bat_number / pitch_number)
-    stmt = pg_insert(StatcastPitch.__table__).values(rows)
-    stmt = stmt.on_conflict_do_nothing(constraint="uq_pitch")
+    # Insert in chunks to avoid SSL timeouts on Render's free tier
+    CHUNK = 100
+    total_inserted = 0
+    for i in range(0, len(rows), CHUNK):
+        chunk = rows[i : i + CHUNK]
+        stmt = pg_insert(StatcastPitch.__table__).values(chunk)
+        stmt = stmt.on_conflict_do_nothing(constraint="uq_pitch")
+        with engine.begin() as conn:
+            result = conn.execute(stmt)
+        total_inserted += result.rowcount
 
-    with engine.begin() as conn:
-        result = conn.execute(stmt)
-
-    inserted = result.rowcount
-    print(f"  {date_str}: {len(rows)} pitches fetched, {inserted} new rows inserted")
+    print(f"  {date_str}: {len(rows)} pitches fetched, {total_inserted} new rows inserted")
     return len(rows)
 
 
