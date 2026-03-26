@@ -21,8 +21,9 @@ import time
 import traceback
 from datetime import date, timedelta, datetime
 
-import pandas as pd
+import psycopg2
 import psycopg2.extras
+import pandas as pd
 from sqlalchemy import text
 
 # Allow imports from backend
@@ -30,6 +31,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 from database import engine, SessionLocal
 from models import StatcastPitch, DataFetchLog, Base
+
+# Raw DATABASE_URL for direct psycopg2 connections (keepalives set explicitly)
+_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/portfolio")
+
+
+def _raw_connect():
+    """Open a fresh psycopg2 connection with TCP keepalives."""
+    url = _DATABASE_URL
+    # psycopg2 accepts both postgres:// and postgresql://
+    return psycopg2.connect(
+        url,
+        connect_timeout=30,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
+    )
 
 # pybaseball — suppress the "caching" message
 import warnings
@@ -104,16 +122,18 @@ def fetch_and_upsert(date_str: str):
     # Build list of tuples in column order
     values = [tuple(r.get(c) for c in cols) for r in rows]
 
-    # Use psycopg2 execute_values — far more efficient than SQLAlchemy bulk insert
-    # and avoids the massive multi-row SQL that drops SSL connections on free tier
-    with engine.connect() as sa_conn:
-        raw = sa_conn.connection
-        with raw.cursor() as cur:
+    # Use a direct psycopg2 connection (not SQLAlchemy pool) so TCP keepalives
+    # are guaranteed active during the bulk insert on Render's free PostgreSQL.
+    conn = _raw_connect()
+    try:
+        with conn.cursor() as cur:
             psycopg2.extras.execute_values(
                 cur, insert_sql, values, page_size=50
             )
             total_inserted = cur.rowcount
-        raw.commit()
+        conn.commit()
+    finally:
+        conn.close()
 
     print(f"  {date_str}: {len(rows)} pitches fetched, {total_inserted} new rows inserted")
     return len(rows)
