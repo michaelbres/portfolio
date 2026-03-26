@@ -45,27 +45,35 @@ SEASON_START = {
 DEFAULT_SEASON = 2025
 
 
-def get_already_fetched(db) -> set:
-    rows = db.query(DataFetchLog.game_date).filter(DataFetchLog.status == "success").all()
-    return {r.game_date for r in rows}
+def get_already_fetched() -> set:
+    db = SessionLocal()
+    try:
+        rows = db.query(DataFetchLog.game_date).filter(DataFetchLog.status == "success").all()
+        return {r.game_date for r in rows}
+    finally:
+        db.close()
 
 
-def log_fetch(db, game_date, rows_fetched, status):
-    existing = db.query(DataFetchLog).filter(DataFetchLog.game_date == game_date).first()
-    if existing:
-        existing.rows_fetched = rows_fetched
-        existing.status = status
-        existing.fetched_at = datetime.utcnow()
-    else:
-        db.add(DataFetchLog(
-            game_date=game_date,
-            rows_fetched=rows_fetched,
-            status=status,
-        ))
-    db.commit()
+def log_fetch(game_date, rows_fetched, status):
+    db = SessionLocal()
+    try:
+        existing = db.query(DataFetchLog).filter(DataFetchLog.game_date == game_date).first()
+        if existing:
+            existing.rows_fetched = rows_fetched
+            existing.status = status
+            existing.fetched_at = datetime.utcnow()
+        else:
+            db.add(DataFetchLog(
+                game_date=game_date,
+                rows_fetched=rows_fetched,
+                status=status,
+            ))
+        db.commit()
+    finally:
+        db.close()
 
 
-def fetch_and_upsert(date_str: str, db):
+def fetch_and_upsert(date_str: str):
     """Fetch one day of Statcast data and upsert into DB. Returns row count."""
     print(f"  Fetching {date_str} ...", flush=True)
     try:
@@ -183,66 +191,61 @@ def dates_in_range(start: date, end: date):
 
 def run(mode: str, specific_date: str = None, range_start: str = None, range_end: str = None):
     Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
 
-    try:
-        if mode == "daily":
-            yesterday = date.today() - timedelta(days=1)
-            date_str = yesterday.strftime("%Y-%m-%d")
-            rows = fetch_and_upsert(date_str, db)
-            log_fetch(db, yesterday, rows, "success")
+    if mode == "daily":
+        yesterday = date.today() - timedelta(days=1)
+        date_str = yesterday.strftime("%Y-%m-%d")
+        rows = fetch_and_upsert(date_str)
+        log_fetch(yesterday, rows, "success")
 
-        elif mode == "date":
-            d = date.fromisoformat(specific_date)
-            rows = fetch_and_upsert(specific_date, db)
-            log_fetch(db, d, rows, "success")
+    elif mode == "date":
+        d = date.fromisoformat(specific_date)
+        rows = fetch_and_upsert(specific_date)
+        log_fetch(d, rows, "success")
 
-        elif mode == "range":
-            start = date.fromisoformat(range_start)
-            end = date.fromisoformat(range_end)
-            already_fetched = get_already_fetched(db)
-            for d in dates_in_range(start, end):
-                if d in already_fetched:
-                    print(f"  Skipping {d} (already fetched)")
-                    continue
-                date_str = d.strftime("%Y-%m-%d")
-                try:
-                    rows = fetch_and_upsert(date_str, db)
-                    log_fetch(db, d, rows, "success")
-                except Exception:
-                    traceback.print_exc()
-                    log_fetch(db, d, 0, "error")
-                time.sleep(2)  # be polite to Baseball Savant
+    elif mode == "range":
+        start = date.fromisoformat(range_start)
+        end = date.fromisoformat(range_end)
+        already_fetched = get_already_fetched()
+        for d in dates_in_range(start, end):
+            if d in already_fetched:
+                print(f"  Skipping {d} (already fetched)")
+                continue
+            date_str = d.strftime("%Y-%m-%d")
+            try:
+                rows = fetch_and_upsert(date_str)
+                log_fetch(d, rows, "success")
+            except Exception:
+                traceback.print_exc()
+                log_fetch(d, 0, "error")
+            time.sleep(2)  # be polite to Baseball Savant
 
-        elif mode == "init":
-            already_fetched = get_already_fetched(db)
-            today = date.today()
-            season_start = SEASON_START.get(DEFAULT_SEASON, date(DEFAULT_SEASON, 3, 27))
-            # Don't fetch today or future dates
-            end = min(today - timedelta(days=1), date(DEFAULT_SEASON, 11, 5))
+    elif mode == "init":
+        already_fetched = get_already_fetched()
+        today = date.today()
+        season_start = SEASON_START.get(DEFAULT_SEASON, date(DEFAULT_SEASON, 3, 27))
+        # Don't fetch today or future dates
+        end = min(today - timedelta(days=1), date(DEFAULT_SEASON, 11, 5))
 
-            if end < season_start:
-                print("Season hasn't started yet or no completed games to load.")
-                return
+        if end < season_start:
+            print("Season hasn't started yet or no completed games to load.")
+            return
 
-            print(f"Initial load: {season_start} → {end}")
-            print(f"Already fetched {len(already_fetched)} days, will skip those.\n")
+        print(f"Initial load: {season_start} → {end}")
+        print(f"Already fetched {len(already_fetched)} days, will skip those.\n")
 
-            for d in dates_in_range(season_start, end):
-                if d in already_fetched:
-                    print(f"  Skipping {d} (already fetched)")
-                    continue
-                date_str = d.strftime("%Y-%m-%d")
-                try:
-                    rows = fetch_and_upsert(date_str, db)
-                    log_fetch(db, d, rows, "success")
-                except Exception:
-                    traceback.print_exc()
-                    log_fetch(db, d, 0, "error")
-                time.sleep(3)
-
-    finally:
-        db.close()
+        for d in dates_in_range(season_start, end):
+            if d in already_fetched:
+                print(f"  Skipping {d} (already fetched)")
+                continue
+            date_str = d.strftime("%Y-%m-%d")
+            try:
+                rows = fetch_and_upsert(date_str)
+                log_fetch(d, rows, "success")
+            except Exception:
+                traceback.print_exc()
+                log_fetch(d, 0, "error")
+            time.sleep(3)
 
 
 if __name__ == "__main__":
