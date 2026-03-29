@@ -343,6 +343,50 @@ def pitcher_summary(
     }
 
 
+@router.get("/game-dates")
+def game_dates(db: Session = Depends(get_db), season: Optional[int] = None):
+    """Return all distinct dates that have pitch data, most recent first."""
+    query = db.query(StatcastPitch.game_date).distinct()
+    if season:
+        query = query.filter(StatcastPitch.game_year == season)
+    rows = query.order_by(desc(StatcastPitch.game_date)).all()
+    return [str(r.game_date) for r in rows]
+
+
+@router.get("/pitchers-by-date")
+def pitchers_by_date(
+    game_date: str,
+    db: Session = Depends(get_db),
+):
+    """Return every pitcher who threw at least one pitch on the given date."""
+    rows = db.query(
+        StatcastPitch.pitcher,
+        StatcastPitch.player_name,
+        StatcastPitch.p_throws,
+        StatcastPitch.game_pk,
+        StatcastPitch.home_team,
+        StatcastPitch.away_team,
+        func.count(StatcastPitch.id).label("total_pitches"),
+    ).filter(StatcastPitch.game_date == game_date).group_by(
+        StatcastPitch.pitcher,
+        StatcastPitch.player_name,
+        StatcastPitch.p_throws,
+        StatcastPitch.game_pk,
+        StatcastPitch.home_team,
+        StatcastPitch.away_team,
+    ).order_by(StatcastPitch.away_team, StatcastPitch.home_team, desc("total_pitches")).all()
+
+    return [{
+        "pitcher_id": r.pitcher,
+        "pitcher_name": r.player_name,
+        "p_throws": r.p_throws,
+        "game_pk": r.game_pk,
+        "home_team": r.home_team,
+        "away_team": r.away_team,
+        "total_pitches": r.total_pitches,
+    } for r in rows]
+
+
 @router.get("/pitchers/{pitcher_id}/games")
 def pitcher_games(
     pitcher_id: int,

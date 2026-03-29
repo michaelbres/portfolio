@@ -3,178 +3,199 @@ import { mlb } from '../../lib/api'
 import { pitchColor } from '../../lib/pitchColors'
 
 const LINE_COLS = [
-  { key: 'pa',           label: 'PA',      title: 'Plate appearances (batters faced)' },
-  { key: 'k',            label: 'K',       title: 'Strikeouts' },
-  { key: 'bb',           label: 'BB',      title: 'Walks' },
-  { key: 'hits',         label: 'H',       title: 'Hits allowed' },
-  { key: 'hr',           label: 'HR',      title: 'Home runs allowed' },
-  { key: 'hbp',          label: 'HBP',     title: 'Hit by pitch' },
-  { key: 'total_pitches',label: 'Pitches', title: 'Total pitches thrown' },
-  { key: 'whiffs',       label: 'Whiffs',  title: 'Swinging strikes' },
-  { key: 'strike_pct',   label: 'Strike%', title: 'Strike percentage', fmt: (v) => v != null ? v + '%' : '–' },
+  { key: 'pa',            label: 'PA',      title: 'Batters faced' },
+  { key: 'k',             label: 'K',       title: 'Strikeouts' },
+  { key: 'bb',            label: 'BB',      title: 'Walks' },
+  { key: 'hits',          label: 'H',       title: 'Hits allowed' },
+  { key: 'hr',            label: 'HR',      title: 'Home runs' },
+  { key: 'hbp',           label: 'HBP',     title: 'Hit by pitch' },
+  { key: 'total_pitches', label: 'Pitches', title: 'Total pitches' },
+  { key: 'whiffs',        label: 'Whiffs',  title: 'Swinging strikes' },
+  { key: 'strike_pct',    label: 'Strike%', title: 'Strike percentage', fmt: (v) => v != null ? v + '%' : '–' },
 ]
 
 const ARSENAL_COLS = [
-  { key: 'pitch_name', label: 'Pitch',   fmt: null },
-  { key: 'count',      label: 'Count',   fmt: null },
-  { key: 'usage_pct',  label: 'Pitch%',  fmt: (v) => v + '%' },
-  { key: 'avg_velo',   label: 'Velo',    fmt: (v) => v?.toFixed(1) ?? '–' },
-  { key: 'avg_spin',   label: 'Spin',    fmt: (v) => v ? Math.round(v) : '–' },
-  { key: 'avg_hb',     label: 'HB',      fmt: (v) => v != null ? v.toFixed(1) + '"' : '–' },
-  { key: 'avg_ivb',    label: 'IVB',     fmt: (v) => v != null ? v.toFixed(1) + '"' : '–' },
-  { key: 'zone_pct',   label: 'Zone%',   fmt: (v) => v != null ? v + '%' : '–' },
-  { key: 'chase_pct',  label: 'Chase%',  fmt: (v) => v != null ? v + '%' : '–' },
-  { key: 'whiff_pct',  label: 'Whiff%',  fmt: (v) => v != null ? v + '%' : '–' },
-  { key: 'avg_xwoba',  label: 'xwOBA',   fmt: (v) => v?.toFixed(3) ?? '–' },
+  { key: 'pitch_name', label: 'Pitch',  fmt: null },
+  { key: 'count',      label: 'Count',  fmt: null },
+  { key: 'usage_pct',  label: 'Pitch%', fmt: (v) => v + '%' },
+  { key: 'avg_velo',   label: 'Velo',   fmt: (v) => v?.toFixed(1) ?? '–' },
+  { key: 'avg_spin',   label: 'Spin',   fmt: (v) => v ? Math.round(v) : '–' },
+  { key: 'avg_hb',     label: 'HB',     fmt: (v) => v != null ? v.toFixed(1) + '"' : '–' },
+  { key: 'avg_ivb',    label: 'IVB',    fmt: (v) => v != null ? v.toFixed(1) + '"' : '–' },
+  { key: 'zone_pct',   label: 'Zone%',  fmt: (v) => v != null ? v + '%' : '–' },
+  { key: 'chase_pct',  label: 'Chase%', fmt: (v) => v != null ? v + '%' : '–' },
+  { key: 'whiff_pct',  label: 'Whiff%', fmt: (v) => v != null ? v + '%' : '–' },
+  { key: 'avg_xwoba',  label: 'xwOBA',  fmt: (v) => v?.toFixed(3) ?? '–' },
 ]
 
+function formatDateLabel(dateStr) {
+  // "2026-03-28" → "Mar 28"
+  const [y, m, d] = dateStr.split('-')
+  const dt = new Date(Number(y), Number(m) - 1, Number(d))
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function groupByGame(pitchers) {
+  const map = new Map()
+  for (const p of pitchers) {
+    const key = p.game_pk
+    if (!map.has(key)) map.set(key, { home: p.home_team, away: p.away_team, pitchers: [] })
+    map.get(key).pitchers.push(p)
+  }
+  return [...map.values()].sort((a, b) =>
+    `${a.away}${a.home}`.localeCompare(`${b.away}${b.home}`)
+  )
+}
+
 export default function GameSummary({ season }) {
-  const [search, setSearch]         = useState('')
-  const [pitcherResults, setPitcherResults] = useState([])
-  const [selectedPitcher, setSelectedPitcher] = useState(null)
-  const [games, setGames]           = useState([])
-  const [selectedGame, setSelectedGame] = useState(null)
-  const [summary, setSummary]       = useState(null)
-  const [loading, setLoading]       = useState(false)
-  const [showDropdown, setShowDropdown] = useState(false)
-  const debounceRef = useRef(null)
-  const wrapperRef = useRef(null)
+  const [dates, setDates]               = useState([])
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [gamePitchers, setGamePitchers] = useState([])   // pitchers for selected date
+  const [summary, setSummary]           = useState(null)
+  const [selectedKey, setSelectedKey]   = useState(null) // "pitcher_id:game_pk"
+  const [loadingDates, setLoadingDates] = useState(false)
+  const [loadingPitchers, setLoadingPitchers] = useState(false)
+  const [loadingSummary, setLoadingSummary]   = useState(false)
+  const dateStripRef = useRef(null)
 
-  // Close dropdown on outside click
+  // Load available dates whenever season changes
   useEffect(() => {
-    function onClickOutside(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setShowDropdown(false)
-      }
+    setLoadingDates(true)
+    setSelectedDate(null)
+    setGamePitchers([])
+    setSummary(null)
+    mlb.gameDates({ season })
+      .then((res) => { setDates(res.data); if (res.data.length) selectDate(res.data[0]) })
+      .catch(() => {})
+      .finally(() => setLoadingDates(false))
+  }, [season])
+
+  async function selectDate(dateStr) {
+    setSelectedDate(dateStr)
+    setSummary(null)
+    setSelectedKey(null)
+    setGamePitchers([])
+    setLoadingPitchers(true)
+    try {
+      const res = await mlb.pitchersByDate({ game_date: dateStr })
+      setGamePitchers(res.data)
+    } catch { /* ignore */ } finally {
+      setLoadingPitchers(false)
     }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
-
-  // Debounced pitcher search
-  useEffect(() => {
-    if (!search.trim()) { setPitcherResults([]); setShowDropdown(false); return }
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await mlb.pitchers({ search: search.trim(), season })
-        setPitcherResults(res.data.slice(0, 10))
-        setShowDropdown(true)
-      } catch { /* ignore */ }
-    }, 300)
-  }, [search, season])
+  }
 
   async function selectPitcher(pitcher) {
-    setSelectedPitcher(pitcher)
-    setSearch(pitcher.pitcher_name)
-    setShowDropdown(false)
-    setPitcherResults([])
-    setSelectedGame(null)
+    const key = `${pitcher.pitcher_id}:${pitcher.game_pk}`
+    if (key === selectedKey) return
+    setSelectedKey(key)
     setSummary(null)
-    setLoading(true)
+    setLoadingSummary(true)
     try {
-      const res = await mlb.pitcherGames(pitcher.pitcher_id, { season })
-      setGames(res.data)
-    } catch { /* ignore */ } finally {
-      setLoading(false)
-    }
-  }
-
-  async function selectGame(game) {
-    setSelectedGame(game)
-    setSummary(null)
-    setLoading(true)
-    try {
-      const res = await mlb.pitcherGameSummary(selectedPitcher.pitcher_id, game.game_pk)
+      const res = await mlb.pitcherGameSummary(pitcher.pitcher_id, pitcher.game_pk)
       setSummary(res.data)
     } catch { /* ignore */ } finally {
-      setLoading(false)
+      setLoadingSummary(false)
     }
   }
 
-  function gameLabel(g) {
-    const opp = g.home_team === (selectedPitcher?.team) ? g.away_team : g.home_team
-    return `${g.game_date}  ${g.away_team} @ ${g.home_team}  (${g.total_pitches} pitches)`
-  }
+  const games = groupByGame(gamePitchers)
 
   return (
-    <div className="space-y-6">
-      {/* Step 1: Pitcher search */}
-      <div className="bg-white border border-gray-200 rounded p-4">
-        <p className="text-xs font-sans text-gray-500 uppercase tracking-wider mb-2">Search Pitcher</p>
-        <div className="relative" ref={wrapperRef}>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setSelectedPitcher(null); setGames([]); setSummary(null) }}
-            placeholder="e.g. Gerrit Cole"
-            className="border border-gray-300 rounded px-3 py-2 text-sm font-sans w-72 focus:outline-none focus:border-sv-blue"
-          />
-          {showDropdown && pitcherResults.length > 0 && (
-            <ul className="absolute z-10 left-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded shadow-lg text-sm font-sans">
-              {pitcherResults.map((p) => (
-                <li
-                  key={p.pitcher_id}
-                  onMouseDown={() => selectPitcher(p)}
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex justify-between items-center"
-                >
-                  <span>{p.pitcher_name}</span>
-                  <span className="text-xs text-gray-400">{p.p_throws}HP · {p.total_pitches} pitches</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+    <div className="space-y-4">
+      {/* Date strip */}
+      <div className="bg-white border border-gray-200 rounded p-3">
+        <p className="text-xs font-sans text-gray-400 uppercase tracking-wider mb-2">Select Date</p>
+        {loadingDates ? (
+          <p className="text-sm text-gray-400 font-sans animate-pulse">Loading dates…</p>
+        ) : dates.length === 0 ? (
+          <p className="text-sm text-gray-400 font-sans">No game data available for this season.</p>
+        ) : (
+          <div
+            ref={dateStripRef}
+            className="flex gap-2 overflow-x-auto pb-1"
+            style={{ scrollbarWidth: 'thin' }}
+          >
+            {dates.map((d) => (
+              <button
+                key={d}
+                onClick={() => selectDate(d)}
+                className={`flex-shrink-0 px-3 py-1.5 rounded text-xs font-bangers tracking-wider transition-colors whitespace-nowrap ${
+                  d === selectedDate
+                    ? 'bg-sv-red text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {formatDateLabel(d)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Step 2: Game picker */}
-      {selectedPitcher && (
+      {/* Pitchers for selected date */}
+      {selectedDate && (
         <div className="bg-white border border-gray-200 rounded p-4">
-          <p className="text-xs font-sans text-gray-500 uppercase tracking-wider mb-2">Select Game</p>
-          {loading && !summary ? (
-            <p className="text-sm text-gray-400 font-sans animate-pulse">Loading games…</p>
+          <p className="text-xs font-sans text-gray-400 uppercase tracking-wider mb-3">
+            Pitchers — {formatDateLabel(selectedDate)}
+          </p>
+          {loadingPitchers ? (
+            <p className="text-sm text-gray-400 font-sans animate-pulse">Loading pitchers…</p>
           ) : games.length === 0 ? (
-            <p className="text-sm text-gray-400 font-sans">No games found for this season.</p>
+            <p className="text-sm text-gray-400 font-sans">No pitching data for this date.</p>
           ) : (
-            <select
-              value={selectedGame?.game_pk ?? ''}
-              onChange={(e) => {
-                const g = games.find((x) => String(x.game_pk) === e.target.value)
-                if (g) selectGame(g)
-              }}
-              className="border border-gray-300 rounded px-2 py-1.5 text-sm font-sans w-full max-w-md focus:outline-none focus:border-sv-blue"
-            >
-              <option value="">— choose a game —</option>
-              {games.map((g) => (
-                <option key={g.game_pk} value={g.game_pk}>{gameLabel(g)}</option>
+            <div className="space-y-4">
+              {games.map((game) => (
+                <div key={game.home + game.away}>
+                  <div className="text-xs font-bangers tracking-wider text-sv-blue mb-1.5">
+                    {game.away} @ {game.home}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {game.pitchers.map((p) => {
+                      const key = `${p.pitcher_id}:${p.game_pk}`
+                      const active = key === selectedKey
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => selectPitcher(p)}
+                          className={`px-3 py-1.5 rounded border text-xs font-sans transition-colors ${
+                            active
+                              ? 'bg-sv-dark text-white border-sv-dark'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-sv-blue hover:text-sv-blue'
+                          }`}
+                        >
+                          {p.pitcher_name}
+                          <span className={`ml-1.5 ${active ? 'text-gray-400' : 'text-gray-400'}`}>
+                            {p.total_pitches}p
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               ))}
-            </select>
+            </div>
           )}
         </div>
       )}
 
-      {/* Step 3: Game summary */}
-      {loading && selectedGame && !summary && (
-        <p className="text-sm text-gray-400 font-sans animate-pulse px-1">Loading game summary…</p>
+      {/* Game summary */}
+      {loadingSummary && (
+        <p className="text-sm text-gray-400 font-sans animate-pulse px-1">Loading summary…</p>
       )}
 
       {summary && (
         <div className="space-y-4">
           {/* Header */}
-          <div className="bg-sv-dark rounded px-5 py-4">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <h2 className="font-bangers text-white text-2xl tracking-wider">{summary.pitcher_name}</h2>
-              <span className="text-gray-400 text-sm font-sans">{summary.p_throws}HP</span>
-              <span className="text-sv-red font-bangers tracking-wider text-lg">
-                {summary.game_date}
-              </span>
-              <span className="text-gray-300 text-sm font-sans">
-                {summary.away_team} @ {summary.home_team}
-              </span>
-            </div>
+          <div className="bg-sv-dark rounded px-5 py-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h2 className="font-bangers text-white text-2xl tracking-wider">{summary.pitcher_name}</h2>
+            <span className="text-gray-400 text-sm font-sans">{summary.p_throws}HP</span>
+            <span className="text-sv-red font-bangers tracking-wider text-lg">{summary.game_date}</span>
+            <span className="text-gray-300 text-sm font-sans">
+              {summary.away_team} @ {summary.home_team}
+            </span>
           </div>
 
-          {/* Overall line */}
+          {/* Pitching line */}
           <div className="bg-white border border-gray-200 rounded overflow-hidden">
             <div className="bg-sv-blue px-4 py-2">
               <span className="font-bangers text-white tracking-wider text-sm">PITCHING LINE</span>
@@ -206,7 +227,7 @@ export default function GameSummary({ season }) {
             </div>
           </div>
 
-          {/* Per-pitch-type breakdown */}
+          {/* Pitch breakdown */}
           <div className="bg-white border border-gray-200 rounded overflow-hidden">
             <div className="bg-sv-blue px-4 py-2">
               <span className="font-bangers text-white tracking-wider text-sm">PITCH BREAKDOWN</span>
