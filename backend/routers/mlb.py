@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, asc, or_, Integer, cast
+from sqlalchemy import func, desc, asc, or_, and_, Integer, cast
 from typing import Optional
 from database import get_db
 from models import StatcastPitch, DataFetchLog
@@ -341,6 +341,74 @@ def pitcher_summary(
             "avg_extension": _round(a.avg_extension, 1),
         } for a in arsenal],
     }
+
+
+@router.get("/pitch-type-norms")
+def pitch_type_norms(db: Session = Depends(get_db), season: Optional[int] = None):
+    """
+    P10/P90 ranges for each metric per pitch type, computed across all pitchers
+    with >= 50 pitches of that type. Used for league-relative heat map coloring.
+    """
+    swing_descs = ["swinging_strike", "swinging_strike_blocked", "foul_tip",
+                   "hit_into_play", "foul", "foul_bunt"]
+    miss_descs  = ["swinging_strike", "swinging_strike_blocked"]
+
+    swings      = func.sum(cast(StatcastPitch.description.in_(swing_descs), Integer))
+    misses      = func.sum(cast(StatcastPitch.description.in_(miss_descs),  Integer))
+    in_zone     = func.sum(cast(and_(StatcastPitch.zone >= 1, StatcastPitch.zone <= 9), Integer))
+    out_zone    = func.sum(cast(StatcastPitch.zone > 9, Integer))
+    chase       = func.sum(cast(and_(StatcastPitch.zone > 9,
+                                     StatcastPitch.description.in_(swing_descs)), Integer))
+
+    query = db.query(
+        StatcastPitch.pitch_type,
+        func.count(StatcastPitch.id).label("cnt"),
+        func.avg(StatcastPitch.release_speed).label("velo"),
+        func.avg(StatcastPitch.release_spin_rate).label("spin"),
+        func.avg(StatcastPitch.pfx_z).label("ivb"),
+        func.avg(StatcastPitch.estimated_woba_using_speedangle).label("xwoba"),
+        swings.label("swings"),
+        misses.label("misses"),
+        in_zone.label("in_zone"),
+        out_zone.label("out_zone"),
+        chase.label("chase"),
+    ).filter(
+        StatcastPitch.pitch_type.isnot(None)
+    ).group_by(
+        StatcastPitch.pitcher, StatcastPitch.pitch_type
+    ).having(func.count(StatcastPitch.id) >= 50)
+
+    if season:
+        query = query.filter(StatcastPitch.game_year == season)
+
+    rows = query.all()
+
+    # Group values by pitch type, then compute percentiles in Python
+    from collections import defaultdict
+    buckets = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        pt = r.pitch_type
+        if r.velo:   buckets[pt]["velo"].append(float(r.velo))
+        if r.spin:   buckets[pt]["spin"].append(float(r.spin))
+        if r.ivb:    buckets[pt]["ivb"].append(float(r.ivb) * 12)   # feet → inches
+        if r.xwoba:  buckets[pt]["xwoba"].append(float(r.xwoba))
+        if r.swings: buckets[pt]["whiff_pct"].append(float(r.misses or 0) / float(r.swings) * 100)
+        if r.cnt:    buckets[pt]["zone_pct"].append(float(r.in_zone or 0) / float(r.cnt) * 100)
+        if r.out_zone: buckets[pt]["chase_pct"].append(float(r.chase or 0) / float(r.out_zone) * 100)
+
+    def pct(data, p):
+        s = sorted(data)
+        if not s:
+            return None
+        idx = (len(s) - 1) * p / 100
+        lo, hi = int(idx), min(int(idx) + 1, len(s) - 1)
+        return round(s[lo] + (s[hi] - s[lo]) * (idx - lo), 4)
+
+    norms = {}
+    for pt, metrics in buckets.items():
+        norms[pt] = {m: {"p10": pct(vals, 10), "p90": pct(vals, 90)}
+                     for m, vals in metrics.items()}
+    return norms
 
 
 @router.get("/game-dates")

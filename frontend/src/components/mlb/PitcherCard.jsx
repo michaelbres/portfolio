@@ -1,16 +1,27 @@
 import { useEffect } from 'react'
 import { pitchColor, PITCH_LABEL } from '../../lib/pitchColors'
 
-// ── Heat map ─────────────────────────────────────────────────────────────────
-function heatColor(val, min, max, higherIsBetter = true) {
-  if (val == null || min == null || max == null || min === max) return {}
-  const pct = (val - min) / (max - min)
+// ── Heat map (league-relative: p10/p90 per pitch type) ───────────────────────
+function heatColor(val, p10, p90, higherIsBetter = true) {
+  if (val == null || p10 == null || p90 == null || p10 === p90) return {}
+  const pct = Math.max(0, Math.min(1, (val - p10) / (p90 - p10)))
   const adj = higherIsBetter ? pct : 1 - pct
   if (adj >= 0.85) return { backgroundColor: '#fee2e2', color: '#7f1d1d', fontWeight: 600 }
   if (adj >= 0.65) return { backgroundColor: '#fff7ed', color: '#7c2d12' }
   if (adj <= 0.15) return { backgroundColor: '#dbeafe', color: '#1e3a5f', fontWeight: 600 }
   if (adj <= 0.35) return { backgroundColor: '#f0f9ff', color: '#0c4a6e' }
   return {}
+}
+
+// Maps arsenal column keys → norm bucket keys returned by /pitch-type-norms
+const NORM_KEY = {
+  avg_velo:   'velo',
+  avg_spin:   'spin',
+  avg_ivb:    'ivb',
+  zone_pct:   'zone_pct',
+  chase_pct:  'chase_pct',
+  whiff_pct:  'whiff_pct',
+  avg_xwoba:  'xwoba',
 }
 
 // ── Strike zone SVG ──────────────────────────────────────────────────────────
@@ -130,7 +141,7 @@ const LINE_COLS = [
 ]
 
 // ── Main card ────────────────────────────────────────────────────────────────
-export default function PitcherCard({ summary, onClose }) {
+export default function PitcherCard({ summary, norms = {}, onClose }) {
   // Close on Escape
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose() }
@@ -142,14 +153,11 @@ export default function PitcherCard({ summary, onClose }) {
 
   const pitchTypes = [...new Set(summary.pitches.map((p) => p.pitch_type).filter(Boolean))]
 
-  // Pre-compute min/max for heat map columns
-  const ranges = {}
-  ARSENAL_COLS.forEach((c) => {
-    if (c.heat) {
-      const vals = summary.arsenal.map((r) => r[c.key]).filter((v) => v != null)
-      if (vals.length > 1) ranges[c.key] = { min: Math.min(...vals), max: Math.max(...vals) }
-    }
-  })
+  // Look up league p10/p90 for a given pitch type + column
+  function getRange(pitchType, colKey) {
+    const normKey = NORM_KEY[colKey]
+    return normKey ? norms[pitchType]?.[normKey] : null
+  }
 
   const photoUrl = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${summary.pitcher_id}/headshot/67/current`
 
@@ -262,8 +270,9 @@ export default function PitcherCard({ summary, onClose }) {
                     <tr key={row.pitch_type} className="border-b border-gray-100">
                       {ARSENAL_COLS.map((c, ci) => {
                         const val = row[c.key]
-                        const style = c.heat && ranges[c.key]
-                          ? heatColor(val, ranges[c.key].min, ranges[c.key].max, c.hib !== false)
+                        const range = c.heat ? getRange(row.pitch_type, c.key) : null
+                        const style = range
+                          ? heatColor(val, range.p10, range.p90, c.hib !== false)
                           : {}
                         if (ci === 0) {
                           return (

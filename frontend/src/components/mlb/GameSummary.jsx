@@ -25,9 +25,15 @@ export default function GameSummary({ season }) {
   const [gamePitchers, setGamePitchers] = useState([])
   const [loadingDates, setLoadingDates] = useState(false)
   const [loadingPitchers, setLoadingPitchers] = useState(false)
-  const [cardSummary, setCardSummary]   = useState(null)   // open card data
+  const [cardSummary, setCardSummary]   = useState(null)
   const [loadingCard, setLoadingCard]   = useState(false)
+  const [norms, setNorms]               = useState({})
   const dateStripRef = useRef(null)
+
+  // Load league norms once per season (used for heat map coloring in cards)
+  useEffect(() => {
+    mlb.pitchTypeNorms({ season }).then((r) => setNorms(r.data)).catch(() => {})
+  }, [season])
 
   useEffect(() => {
     setLoadingDates(true)
@@ -70,7 +76,7 @@ export default function GameSummary({ season }) {
     <>
       {/* Card modal */}
       {cardSummary && (
-        <PitcherCard summary={cardSummary} onClose={() => setCardSummary(null)} />
+        <PitcherCard summary={cardSummary} norms={norms} onClose={() => setCardSummary(null)} />
       )}
 
       <div className="space-y-4">

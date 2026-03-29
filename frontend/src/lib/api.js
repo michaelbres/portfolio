@@ -11,6 +11,7 @@ export const mlb = {
   pitcherPitches: (id, p)      => api.get(`/api/mlb/pitchers/${id}/pitches`, { params: p }),
   pitcherGames: (id, p)        => api.get(`/api/mlb/pitchers/${id}/games`, { params: p }),
   pitcherGameSummary: (id, pk) => api.get(`/api/mlb/pitchers/${id}/game-summary`, { params: { game_pk: pk } }),
+  pitchTypeNorms: (p)          => api.get('/api/mlb/pitch-type-norms', { params: p }),
   gameDates: (p)               => api.get('/api/mlb/game-dates', { params: p }),
   pitchersByDate: (p)          => api.get('/api/mlb/pitchers-by-date', { params: p }),
   leaderboardPitching: (p)   => api.get('/api/mlb/leaderboards/pitching', { params: p }),
