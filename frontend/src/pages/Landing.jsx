@@ -15,6 +15,18 @@ const PROJECTS = [
     tag: 'LIVE',
   },
   {
+    to: '/betting',
+    title: 'Betting Tools',
+    subtitle: 'Compare Lines · No-Vig · Parlay · EV',
+    description:
+      'Five calculators in one: compare lines across books, strip vig to find fair odds, build parlays, convert formats, and calculate expected value with Kelly sizing.',
+    color: 'bg-sv-dark',
+    textColor: 'text-white',
+    accentColor: 'bg-pop-yellow',
+    emoji: '🎲',
+    tag: 'LIVE',
+  },
+  {
     to: '#',
     title: 'Coming Soon',
     subtitle: 'More projects on the way',
