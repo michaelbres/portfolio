@@ -494,6 +494,18 @@ def pitcher_game_summary(
 
     arsenal.sort(key=lambda x: -x["count"])
 
+    # Individual pitch coordinates for scatter plots
+    pitch_coords = [{
+        "pitch_type":     p.pitch_type,
+        "plate_x":        p.plate_x,
+        "plate_z":        p.plate_z,
+        "sz_top":         p.sz_top,
+        "sz_bot":         p.sz_bot,
+        "release_pos_x":  p.release_pos_x,
+        "release_pos_z":  p.release_pos_z,
+        "description":    p.description,
+    } for p in pitches if p.pitch_type]
+
     return {
         "pitcher_id": pitcher_id,
         "pitcher_name": p0.player_name,
@@ -510,6 +522,7 @@ def pitcher_game_summary(
             "strike_pct": round(strikes / total * 100, 1) if total else None,
         },
         "arsenal": arsenal,
+        "pitches": pitch_coords,
     }
 
 
