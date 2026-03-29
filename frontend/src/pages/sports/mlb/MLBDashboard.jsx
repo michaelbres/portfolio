@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import Navbar from '../../../components/Navbar'
 import LeaderboardTable from '../../../components/mlb/LeaderboardTable'
+import GameSummary from '../../../components/mlb/GameSummary'
 import { mlb } from '../../../lib/api'
 
-const TABS = ['Statcast Search', 'Pitching Leaderboard', 'Hitting Leaderboard']
+const TABS = ['Hitting Leaderboard', 'Pitching Leaderboard', 'Game Summary', 'Statcast Search']
 
 // Column definitions for leaderboards
 const PITCHING_COLS = [
@@ -64,7 +65,7 @@ export default function MLBDashboard() {
 
   // Filter state
   const [filters, setFilters] = useState({
-    season: 2025,
+    season: 2026,
     team: '',
     p_throws: '',
     stand: '',
@@ -83,19 +84,30 @@ export default function MLBDashboard() {
 
   useEffect(() => {
     mlb.dataStatus().then((r) => setDataStatus(r.data)).catch(() => {})
-    mlb.teams({ season: 2025 }).then((r) => setTeams(r.data)).catch(() => {})
+    mlb.teams({ season: 2026 }).then((r) => setTeams(r.data)).catch(() => {})
     mlb.pitchTypes().then((r) => setPitchTypes(r.data)).catch(() => {})
   }, [])
 
   const fetchData = useCallback(async () => {
+    if (tab === 2) return  // GameSummary manages its own data
     setLoading(true)
     try {
       const params = { season: filters.season }
-      if (filters.team)    params.team = filters.team
+      if (filters.team)     params.team = filters.team
       if (filters.p_throws) params.p_throws = filters.p_throws
-      if (filters.stand)   params.stand = filters.stand
+      if (filters.stand)    params.stand = filters.stand
 
       if (tab === 0) {
+        params.min_batted_balls = filters.min_batted_balls
+        const res = await mlb.leaderboardHitting(params)
+        setData(res.data)
+        setTotal(res.data.length)
+      } else if (tab === 1) {
+        params.min_pitches = filters.min_pitches
+        const res = await mlb.leaderboardPitching(params)
+        setData(res.data)
+        setTotal(res.data.length)
+      } else {
         if (filters.pitch_type) params.pitch_type = filters.pitch_type
         params.limit = filters.limit
         params.offset = filters.offset
@@ -103,16 +115,6 @@ export default function MLBDashboard() {
         const res = await mlb.pitches(params)
         setData(res.data.data)
         setTotal(res.data.total)
-      } else if (tab === 1) {
-        params.min_pitches = filters.min_pitches
-        const res = await mlb.leaderboardPitching(params)
-        setData(res.data)
-        setTotal(res.data.length)
-      } else {
-        params.min_batted_balls = filters.min_batted_balls
-        const res = await mlb.leaderboardHitting(params)
-        setData(res.data)
-        setTotal(res.data.length)
       }
     } catch (e) {
       console.error(e)
@@ -123,7 +125,7 @@ export default function MLBDashboard() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  const currentCols = tab === 0 ? SEARCH_COLS : tab === 1 ? PITCHING_COLS : HITTING_COLS
+  const currentCols = tab === 3 ? SEARCH_COLS : tab === 1 ? PITCHING_COLS : HITTING_COLS
 
   return (
     <div className="min-h-screen bg-sv-light">
@@ -136,7 +138,7 @@ export default function MLBDashboard() {
             <div className="flex items-center gap-3 mb-1">
               <span className="text-3xl">⚾</span>
               <h1 className="font-bangers text-white text-4xl tracking-wider">MLB STATCAST</h1>
-              <span className="bg-sv-red text-white text-xs font-bangers px-2 py-0.5 tracking-wider">2025</span>
+              <span className="bg-sv-red text-white text-xs font-bangers px-2 py-0.5 tracking-wider">2026</span>
             </div>
             <p className="text-gray-400 text-sm font-sans">
               Pitch-by-pitch Statcast data — same source as Baseball Savant
@@ -169,53 +171,63 @@ export default function MLBDashboard() {
           ))}
         </div>
 
-        {/* Filters */}
-        <FilterBar
-          tab={tab} filters={filters} setFilter={setFilter}
-          teams={teams} pitchTypes={pitchTypes}
-        />
+        {/* Filters — hidden on Game Summary tab */}
+        {tab !== 2 && (
+          <FilterBar
+            tab={tab} filters={filters} setFilter={setFilter}
+            teams={teams} pitchTypes={pitchTypes}
+          />
+        )}
 
-        {/* Results header */}
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-gray-500 font-sans">
-            {loading ? 'Loading…' : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}`}
-          </span>
-          {tab === 0 && (
-            <div className="flex gap-2 items-center text-xs font-sans text-gray-500">
-              <button
-                disabled={filters.offset === 0}
-                onClick={() => setFilter('offset', Math.max(0, filters.offset - filters.limit))}
-                className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
-              >
-                ← Prev
-              </button>
-              <span>{Math.floor(filters.offset / filters.limit) + 1} / {Math.ceil(total / filters.limit)}</span>
-              <button
-                disabled={filters.offset + filters.limit >= total}
-                onClick={() => setFilter('offset', filters.offset + filters.limit)}
-                className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
-              >
-                Next →
-              </button>
-            </div>
-          )}
-        </div>
+        {/* Game Summary tab — self-contained */}
+        {tab === 2 && <GameSummary season={filters.season} />}
 
-        {/* Table */}
-        <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="py-20 text-center text-gray-400 font-sans text-sm animate-pulse">
-              Loading Statcast data…
+        {/* Leaderboard / Search tabs */}
+        {tab !== 2 && (
+          <>
+            {/* Results header */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-gray-500 font-sans">
+                {loading ? 'Loading…' : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}`}
+              </span>
+              {tab === 3 && (
+                <div className="flex gap-2 items-center text-xs font-sans text-gray-500">
+                  <button
+                    disabled={filters.offset === 0}
+                    onClick={() => setFilter('offset', Math.max(0, filters.offset - filters.limit))}
+                    className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                  >
+                    ← Prev
+                  </button>
+                  <span>{Math.floor(filters.offset / filters.limit) + 1} / {Math.ceil(total / filters.limit)}</span>
+                  <button
+                    disabled={filters.offset + filters.limit >= total}
+                    onClick={() => setFilter('offset', filters.offset + filters.limit)}
+                    className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </div>
-          ) : (
-            <LeaderboardTable
-              rows={data}
-              columns={currentCols}
-              defaultSort={tab === 1 ? 'avg_velo' : tab === 2 ? 'avg_exit_velo' : 'game_date'}
-              linkTo={tab === 1}
-            />
-          )}
-        </div>
+
+            {/* Table */}
+            <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+              {loading ? (
+                <div className="py-20 text-center text-gray-400 font-sans text-sm animate-pulse">
+                  Loading Statcast data…
+                </div>
+              ) : (
+                <LeaderboardTable
+                  rows={data}
+                  columns={currentCols}
+                  defaultSort={tab === 1 ? 'avg_velo' : tab === 0 ? 'avg_exit_velo' : 'game_date'}
+                  linkTo={tab === 1}
+                />
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -229,7 +241,7 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         label="Season"
         value={filters.season}
         onChange={(v) => setFilter('season', Number(v))}
-        options={[{ value: 2025, label: '2025' }, { value: 2026, label: '2026' }]}
+        options={[{ value: 2026, label: '2026' }, { value: 2025, label: '2025' }]}
       />
 
       {/* Team */}
@@ -242,14 +254,14 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
 
       {/* Pitcher/Batter Hand */}
       <FilterSelect
-        label={tab === 2 ? 'Bats' : 'Throws'}
-        value={tab === 2 ? filters.stand : filters.p_throws}
-        onChange={(v) => tab === 2 ? setFilter('stand', v) : setFilter('p_throws', v)}
+        label={tab === 0 ? 'Bats' : 'Throws'}
+        value={tab === 0 ? filters.stand : filters.p_throws}
+        onChange={(v) => tab === 0 ? setFilter('stand', v) : setFilter('p_throws', v)}
         options={[{ value: '', label: 'All' }, { value: 'R', label: 'R' }, { value: 'L', label: 'L' }]}
       />
 
       {/* Pitch type (search tab only) */}
-      {tab === 0 && (
+      {tab === 3 && (
         <FilterSelect
           label="Pitch Type"
           value={filters.pitch_type}
@@ -272,7 +284,7 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
       )}
 
       {/* Min BBE (hitting leaderboard) */}
-      {tab === 2 && (
+      {tab === 0 && (
         <FilterInput
           label="Min BBE"
           type="number"
@@ -282,7 +294,7 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
       )}
 
       {/* Rows per page (search tab) */}
-      {tab === 0 && (
+      {tab === 3 && (
         <FilterSelect
           label="Rows"
           value={filters.limit}

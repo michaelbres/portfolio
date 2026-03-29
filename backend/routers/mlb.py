@@ -343,6 +343,132 @@ def pitcher_summary(
     }
 
 
+@router.get("/pitchers/{pitcher_id}/games")
+def pitcher_games(
+    pitcher_id: int,
+    db: Session = Depends(get_db),
+    season: Optional[int] = None,
+):
+    query = db.query(
+        StatcastPitch.game_pk,
+        StatcastPitch.game_date,
+        StatcastPitch.home_team,
+        StatcastPitch.away_team,
+        func.count(StatcastPitch.id).label("total_pitches"),
+    ).filter(StatcastPitch.pitcher == pitcher_id).group_by(
+        StatcastPitch.game_pk, StatcastPitch.game_date,
+        StatcastPitch.home_team, StatcastPitch.away_team,
+    )
+    if season:
+        query = query.filter(StatcastPitch.game_year == season)
+    rows = query.order_by(desc(StatcastPitch.game_date)).all()
+    return [{
+        "game_pk": r.game_pk,
+        "game_date": str(r.game_date),
+        "home_team": r.home_team,
+        "away_team": r.away_team,
+        "total_pitches": r.total_pitches,
+    } for r in rows]
+
+
+@router.get("/pitchers/{pitcher_id}/game-summary")
+def pitcher_game_summary(
+    pitcher_id: int,
+    game_pk: int,
+    db: Session = Depends(get_db),
+):
+    pitches = db.query(StatcastPitch).filter(
+        StatcastPitch.pitcher == pitcher_id,
+        StatcastPitch.game_pk == game_pk,
+    ).all()
+
+    if not pitches:
+        raise HTTPException(status_code=404, detail="No pitches found")
+
+    p0 = pitches[0]
+    total = len(pitches)
+
+    # Overall line stats — walk the pitch list once
+    ab_events = {}       # at_bat_number → events value (last pitch of AB)
+    whiffs = strikes = 0
+    for p in pitches:
+        if p.description in ("swinging_strike", "swinging_strike_blocked"):
+            whiffs += 1
+        if p.type in ("S", "X"):
+            strikes += 1
+        if p.events:
+            ab_events[p.at_bat_number] = p.events
+
+    k = bb = hits = hr = hbp = 0
+    for ev in ab_events.values():
+        if "strikeout" in ev:   k += 1
+        if ev == "walk":        bb += 1
+        if ev in ("single", "double", "triple", "home_run"): hits += 1
+        if ev == "home_run":    hr += 1
+        if ev == "hit_by_pitch": hbp += 1
+
+    # Per-pitch-type breakdown
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for p in pitches:
+        if p.pitch_type:
+            groups[p.pitch_type].append(p)
+
+    arsenal = []
+    for pt, grp in groups.items():
+        cnt = len(grp)
+        velos  = [p.release_speed for p in grp if p.release_speed is not None]
+        spins  = [p.release_spin_rate for p in grp if p.release_spin_rate is not None]
+        pfx_xs = [p.pfx_x for p in grp if p.pfx_x is not None]
+        pfx_zs = [p.pfx_z for p in grp if p.pfx_z is not None]
+        xwobas = [p.estimated_woba_using_speedangle for p in grp if p.estimated_woba_using_speedangle is not None]
+
+        in_zone     = [p for p in grp if p.zone and 1 <= p.zone <= 9]
+        out_zone    = [p for p in grp if p.zone and p.zone > 9]
+        swing_descs = {"swinging_strike", "swinging_strike_blocked", "foul_tip",
+                       "hit_into_play", "foul", "foul_bunt"}
+        miss_descs  = {"swinging_strike", "swinging_strike_blocked"}
+
+        swings_total = sum(1 for p in grp if p.description in swing_descs)
+        misses_total = sum(1 for p in grp if p.description in miss_descs)
+        chases       = sum(1 for p in out_zone if p.description in swing_descs)
+
+        arsenal.append({
+            "pitch_type": pt,
+            "pitch_name": grp[0].pitch_name or pt,
+            "count": cnt,
+            "usage_pct": round(cnt / total * 100, 1),
+            "avg_velo":  round(sum(velos)  / len(velos),  1) if velos  else None,
+            "avg_spin":  round(sum(spins)  / len(spins),  0) if spins  else None,
+            "avg_hb":    round(sum(pfx_xs) / len(pfx_xs) * 12, 1) if pfx_xs else None,
+            "avg_ivb":   round(sum(pfx_zs) / len(pfx_zs) * 12, 1) if pfx_zs else None,
+            "zone_pct":  round(len(in_zone) / cnt * 100, 1),
+            "chase_pct": round(chases / len(out_zone) * 100, 1) if out_zone else None,
+            "whiff_pct": round(misses_total / swings_total * 100, 1) if swings_total else None,
+            "avg_xwoba": round(sum(xwobas) / len(xwobas), 3) if xwobas else None,
+        })
+
+    arsenal.sort(key=lambda x: -x["count"])
+
+    return {
+        "pitcher_id": pitcher_id,
+        "pitcher_name": p0.player_name,
+        "p_throws": p0.p_throws,
+        "game_pk": game_pk,
+        "game_date": str(p0.game_date),
+        "home_team": p0.home_team,
+        "away_team": p0.away_team,
+        "line": {
+            "total_pitches": total,
+            "pa": len(ab_events),
+            "k": k, "bb": bb, "hits": hits, "hr": hr, "hbp": hbp,
+            "whiffs": whiffs,
+            "strike_pct": round(strikes / total * 100, 1) if total else None,
+        },
+        "arsenal": arsenal,
+    }
+
+
 @router.get("/pitchers/{pitcher_id}/pitches")
 def pitcher_pitches(
     pitcher_id: int,
