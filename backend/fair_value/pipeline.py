@@ -27,6 +27,7 @@ from models import FairValueGame, FairValueLineupSlot
 from .constants import (
     DEFAULT_PITCH_LIMIT,
     LEAGUE_AVG_WOBA,
+    LEAGUE_AVG_XFIP,
     park_factor,
 )
 from .mlb_api import (
@@ -41,6 +42,9 @@ from .stats_engine import (
     projected_lineup,
     lineup_weighted_woba,
     batter_stats,
+    team_defense_factor,
+    team_hfa_factor,
+    umpire_run_factor,
 )
 # stats_engine functions are all cross-season now; no season arg needed
 from .win_probability import (
@@ -50,7 +54,7 @@ from .win_probability import (
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "1.0"
+MODEL_VERSION = "2.0"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -208,6 +212,7 @@ def _process_game(db: Session, game: dict,
         "woba_full": None, "pa_full": 0,
         "woba_recent": None, "pa_recent": 0,
         "woba_blended": LEAGUE_AVG_WOBA,
+        "xfip_blended": LEAGUE_AVG_XFIP,
         "pitches_per_inning": 15.5,
     }
     home_sp_s = pitcher_stats(db, home_sp_id) if home_sp_id else _sp_default
@@ -246,18 +251,28 @@ def _process_game(db: Session, game: dict,
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
 
+    # Team defense, HFA, and umpire factors
+    home_def = team_defense_factor(db, home_team, game["game_date"])
+    away_def = team_defense_factor(db, away_team, game["game_date"])
+    hfa      = team_hfa_factor(db, home_team)
+    umpire   = umpire_run_factor(db, game.get("umpire"))
+
     fv = compute_game_fair_value(
-        home_lineup_woba=    home_lineup_woba,
-        away_lineup_woba=    away_lineup_woba,
-        home_sp_woba=        home_sp_s["woba_blended"],
-        away_sp_woba=        away_sp_s["woba_blended"],
-        home_bp_woba=        home_bp["woba_fatigued"],
-        away_bp_woba=        away_bp["woba_fatigued"],
-        home_pitch_limit=    home_pitch_limit,
-        away_pitch_limit=    away_pitch_limit,
-        home_pitches_per_inn=home_sp_s["pitches_per_inning"],
-        away_pitches_per_inn=away_sp_s["pitches_per_inning"],
-        park_factor_val=     pf,
+        home_lineup_woba=     home_lineup_woba,
+        away_lineup_woba=     away_lineup_woba,
+        home_sp_xfip=         home_sp_s.get("xfip_blended", LEAGUE_AVG_XFIP),
+        away_sp_xfip=         away_sp_s.get("xfip_blended", LEAGUE_AVG_XFIP),
+        home_bp_woba=         home_bp["woba_fatigued"],
+        away_bp_woba=         away_bp["woba_fatigued"],
+        home_pitch_limit=     home_pitch_limit,
+        away_pitch_limit=     away_pitch_limit,
+        home_pitches_per_inn= home_sp_s["pitches_per_inning"],
+        away_pitches_per_inn= away_sp_s["pitches_per_inning"],
+        park_factor_val=      pf,
+        home_defense_factor=  home_def,
+        away_defense_factor=  away_def,
+        home_hfa_factor=      hfa,
+        umpire_factor=        umpire,
     )
 
     # ── Market lines (Kalshi) ─────────────────────────────────────────────────
@@ -392,24 +407,35 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
     if not row:
         return None
 
-    _sp_default = {"woba_blended": LEAGUE_AVG_WOBA, "pitches_per_inning": 15.5}
+    _sp_default = {
+        "woba_blended":       LEAGUE_AVG_WOBA,
+        "xfip_blended":       LEAGUE_AVG_XFIP,
+        "pitches_per_inning": 15.5,
+    }
     home_sp_s = pitcher_stats(db, row.home_sp_id) if row.home_sp_id else _sp_default
     away_sp_s = pitcher_stats(db, row.away_sp_id) if row.away_sp_id else _sp_default
 
-    pf = park_factor(row.home_team)
+    pf       = park_factor(row.home_team)
+    game_date = row.game_date
+    home_def  = team_defense_factor(db, row.home_team, game_date)
+    away_def  = team_defense_factor(db, row.away_team, game_date)
+    hfa       = team_hfa_factor(db, row.home_team)
 
     fv = compute_game_fair_value(
-        home_lineup_woba=    row.home_lineup_woba or LEAGUE_AVG_WOBA,
-        away_lineup_woba=    row.away_lineup_woba or LEAGUE_AVG_WOBA,
-        home_sp_woba=        home_sp_s["woba_blended"],
-        away_sp_woba=        away_sp_s["woba_blended"],
-        home_bp_woba=        row.home_bp_woba_fatigued or LEAGUE_AVG_WOBA,
-        away_bp_woba=        row.away_bp_woba_fatigued or LEAGUE_AVG_WOBA,
-        home_pitch_limit=    row.home_pitch_limit or DEFAULT_PITCH_LIMIT,
-        away_pitch_limit=    row.away_pitch_limit or DEFAULT_PITCH_LIMIT,
-        home_pitches_per_inn=row.home_sp_pitches_per_inning or 15.5,
-        away_pitches_per_inn=row.away_sp_pitches_per_inning or 15.5,
-        park_factor_val=     pf,
+        home_lineup_woba=     row.home_lineup_woba or LEAGUE_AVG_WOBA,
+        away_lineup_woba=     row.away_lineup_woba or LEAGUE_AVG_WOBA,
+        home_sp_xfip=         home_sp_s.get("xfip_blended", LEAGUE_AVG_XFIP),
+        away_sp_xfip=         away_sp_s.get("xfip_blended", LEAGUE_AVG_XFIP),
+        home_bp_woba=         row.home_bp_woba_fatigued or LEAGUE_AVG_WOBA,
+        away_bp_woba=         row.away_bp_woba_fatigued or LEAGUE_AVG_WOBA,
+        home_pitch_limit=     row.home_pitch_limit or DEFAULT_PITCH_LIMIT,
+        away_pitch_limit=     row.away_pitch_limit or DEFAULT_PITCH_LIMIT,
+        home_pitches_per_inn= row.home_sp_pitches_per_inning or 15.5,
+        away_pitches_per_inn= row.away_sp_pitches_per_inning or 15.5,
+        park_factor_val=      pf,
+        home_defense_factor=  home_def,
+        away_defense_factor=  away_def,
+        home_hfa_factor=      hfa,
     )
 
     row.home_sp_proj_innings = fv["home_sp_proj_innings"]
