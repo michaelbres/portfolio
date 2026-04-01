@@ -45,6 +45,52 @@ function fmtDec(d) {
   return d.toFixed(3)
 }
 
+// ── Empirical margin distributions ───────────────────────────────────────────
+// P(winning margin = exactly k points) from historical data.
+// NFL: pronounced key numbers at 3 and 7.
+// NBA: roughly uniform, minor clustering.
+// CFB: similar to NFL; extra key numbers at 14, 17, 21, 28.
+
+const MARGIN_DIST = {
+  NFL: {
+    1:0.047, 2:0.033, 3:0.152, 4:0.035, 5:0.028, 6:0.055,
+    7:0.095, 8:0.025, 9:0.035, 10:0.060, 11:0.020, 12:0.025,
+    13:0.040, 14:0.050, 15:0.015, 16:0.021, 17:0.035, 18:0.015,
+    19:0.012, 20:0.022, 21:0.025, 22:0.012, 23:0.015, 24:0.020,
+  },
+  NBA: {
+    1:0.030, 2:0.031, 3:0.033, 4:0.033, 5:0.035, 6:0.035,
+    7:0.035, 8:0.034, 9:0.033, 10:0.033, 11:0.030, 12:0.029,
+    13:0.027, 14:0.026, 15:0.024, 16:0.022, 17:0.020, 18:0.018,
+    19:0.016, 20:0.015, 21:0.013, 22:0.011, 23:0.010, 24:0.009,
+    25:0.008,
+  },
+  CFB: {
+    1:0.035, 2:0.025, 3:0.110, 4:0.030, 5:0.025, 6:0.050,
+    7:0.095, 8:0.025, 9:0.030, 10:0.055, 11:0.020, 12:0.020,
+    13:0.035, 14:0.055, 15:0.015, 16:0.020, 17:0.040, 18:0.015,
+    19:0.013, 20:0.025, 21:0.028, 22:0.015, 23:0.015, 24:0.022,
+    28:0.025,
+  },
+}
+
+// Given anchor half-point spread S0 priced at anchorProb,
+// compute the fair probability of covering target half-point spread S.
+// Moving to a harder spread subtracts the probability mass of each
+// integer margin crossed; easier spread adds it back.
+function fairProbAtSpread(s0, anchorProb, s, dist) {
+  if (s === s0) return anchorProb
+  let prob = anchorProb
+  const lo = Math.min(s0, s)
+  const hi = Math.max(s0, s)
+  // Integer margins whose probability mass changes coverage
+  // For half-point spreads, the relevant integers are floor(lo)+1 .. floor(hi)
+  for (let m = Math.floor(lo) + 1; m <= Math.floor(hi); m++) {
+    prob += s < s0 ? (dist[m] || 0) : -(dist[m] || 0)
+  }
+  return Math.max(0.02, Math.min(0.98, prob))
+}
+
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 const TABS = ['Compare Lines', 'No-Vig', 'Parlay', 'Odds Converter', 'EV Calculator']
@@ -94,114 +140,194 @@ function ResultTag({ better }) {
 
 // ── Calculator 1: Compare Lines ───────────────────────────────────────────────
 
+const SPORTS = ['NFL', 'NBA', 'CFB']
+
 function CompareLines() {
+  const [sport,    setSport]    = useState('NFL')
   const [l1spread, setL1spread] = useState('')
   const [l1price,  setL1price]  = useState('')
   const [l2spread, setL2spread] = useState('')
   const [l2price,  setL2price]  = useState('')
-  const [betType,  setBetType]  = useState('spread')  // spread | total
 
-  const o1 = parseOdds(l1price)
-  const o2 = parseOdds(l2price)
-  const p1 = americanToProb(o1)
-  const p2 = americanToProb(o2)
+  const dist = MARGIN_DIST[sport]
 
+  // Parse anchor (line 1)
   const s1 = parseFloat(l1spread)
+  const o1 = parseOdds(l1price)
+  const p1 = americanToProb(o1)   // anchor implied prob
+
+  // Parse comparison (line 2)
   const s2 = parseFloat(l2spread)
-  const sameSpread = !isNaN(s1) && !isNaN(s2) && s1 === s2
+  const o2 = parseOdds(l2price)
+  const p2 = americanToProb(o2)   // actual implied prob at s2
 
-  // Lower implied probability = lower break-even = better line (for same spread)
-  const l1Better = sameSpread && p1 !== null && p2 !== null ? p1 < p2 : null
-  const l2Better = sameSpread && p1 !== null && p2 !== null ? p2 < p1 : null
-
-  const edge = sameSpread && p1 !== null && p2 !== null
-    ? Math.abs(p1 - p2) * 100
+  // Fair prob at s2 given anchor (s1, p1)
+  const fairP2 = (p1 !== null && !isNaN(s1) && !isNaN(s2))
+    ? fairProbAtSpread(s1, p1, s2, dist)
     : null
 
-  const spreadLabel = betType === 'spread' ? 'Spread' : 'Total'
+  // Edge: positive = line 2 is cheaper than fair (good for bettor)
+  const edge = fairP2 !== null && p2 !== null
+    ? (fairP2 - p2) * 100
+    : null
+
+  const l2Better = edge !== null && edge > 0.2
+  const l1Better = edge !== null && edge < -0.2
+
+  // Spread table: generate ±7 half-points around anchor
+  const tableRows = (p1 !== null && !isNaN(s1))
+    ? Array.from({ length: 29 }, (_, i) => {
+        const sp = Math.round((s1 - 7 + i * 0.5) * 2) / 2
+        const fair = fairProbAtSpread(s1, p1, sp, dist)
+        const am = probToAmerican(fair)
+        // half-point value vs previous row
+        const prev = i > 0 ? fairProbAtSpread(s1, p1, sp - 0.5, dist) : null
+        const delta = prev !== null ? (fair - prev) * 100 : null
+        return { sp, fair, am, delta }
+      })
+    : []
 
   return (
-    <div className="space-y-4">
-      {/* Bet type toggle */}
+    <div className="space-y-5">
+      {/* Sport picker */}
       <div className="flex gap-2">
-        {['spread', 'total'].map((t) => (
-          <button
-            key={t}
-            onClick={() => setBetType(t)}
+        {SPORTS.map((s) => (
+          <button key={s} onClick={() => setSport(s)}
             className={`px-4 py-1.5 rounded text-sm font-bangers tracking-wider transition-colors ${
-              betType === t ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            {t === 'spread' ? 'Spread' : 'Total'}
-          </button>
+              sport === s ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}>{s}</button>
         ))}
       </div>
 
+      {/* Line inputs */}
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Line 1 */}
         <Card>
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-bangers text-white tracking-wider text-lg">Line 1</span>
-            <ResultTag better={l1Better} />
+          <div className="font-bangers text-white tracking-wider text-lg mb-3">
+            Line 1 <span className="text-xs text-gray-400 font-sans tracking-normal ml-1">(anchor)</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <OddsInput label={spreadLabel} value={l1spread} onChange={setL1spread} placeholder="ex. -3.5" />
-            <OddsInput label="Price" value={l1price} onChange={setL1price} />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <OddsInput label="Spread" value={l1spread} onChange={setL1spread} placeholder="ex. 3.5" />
+            <OddsInput label="Price"  value={l1price}  onChange={setL1price} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <StatBox label="Implied Prob" value={fmtPct(p1)} />
-            <StatBox label="Break-Even" value={fmtPct(p1)} />
-          </div>
+          {p1 !== null && (
+            <div className="grid grid-cols-2 gap-2">
+              <StatBox label="Implied Prob" value={fmtPct(p1)} />
+              <StatBox label="Break-Even"   value={fmtPct(p1)} />
+            </div>
+          )}
         </Card>
 
-        {/* Line 2 */}
         <Card>
           <div className="flex items-center justify-between mb-3">
-            <span className="font-bangers text-white tracking-wider text-lg">Line 2</span>
-            <ResultTag better={l2Better} />
+            <div className="font-bangers text-white tracking-wider text-lg">
+              Line 2 <span className="text-xs text-gray-400 font-sans tracking-normal ml-1">(compare)</span>
+            </div>
+            {edge !== null && (
+              <span className={`text-xs font-bangers tracking-wider px-2 py-0.5 rounded border ${
+                l2Better ? 'bg-green-900/50 text-green-400 border-green-700' :
+                l1Better ? 'bg-red-900/30 text-red-400 border-red-800' :
+                'bg-gray-800 text-gray-400 border-gray-700'
+              }`}>
+                {l2Better ? '✓ BETTER VALUE' : l1Better ? 'WORSE VALUE' : 'EQUIVALENT'}
+              </span>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <OddsInput label={spreadLabel} value={l2spread} onChange={setL2spread} placeholder="ex. -3.5" />
-            <OddsInput label="Price" value={l2price} onChange={setL2price} />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <OddsInput label="Spread" value={l2spread} onChange={setL2spread} placeholder="ex. 4.5" />
+            <OddsInput label="Price"  value={l2price}  onChange={setL2price} />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <StatBox label="Implied Prob" value={fmtPct(p2)} />
-            <StatBox label="Break-Even" value={fmtPct(p2)} />
-          </div>
+          {(p2 !== null || fairP2 !== null) && (
+            <div className="grid grid-cols-2 gap-2">
+              <StatBox label="Actual Implied" value={fmtPct(p2)} />
+              <StatBox label={`Fair @ ${isNaN(s2) ? '–' : s2}`} value={fmtPct(fairP2)} highlight />
+            </div>
+          )}
         </Card>
       </div>
 
-      {/* Comparison result */}
+      {/* Edge summary */}
       {edge !== null && (
         <Card className="text-center">
-          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1 font-sans">Line Edge</div>
-          <div className="text-3xl font-mono font-bold text-blue-300 mb-1">{edge.toFixed(2)}%</div>
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-1 font-sans">
+            Edge on Line 2 vs. fair value
+          </div>
+          <div className={`text-4xl font-mono font-bold mb-1 ${
+            l2Better ? 'text-green-400' : l1Better ? 'text-red-400' : 'text-gray-300'
+          }`}>
+            {edge > 0 ? '+' : ''}{edge.toFixed(2)}%
+          </div>
           <div className="text-sm text-gray-400 font-sans">
-            {l1Better
-              ? 'Line 1 has a lower break-even — take Line 1'
-              : l2Better
-              ? 'Line 2 has a lower break-even — take Line 2'
-              : 'Lines are equivalent'}
+            {l2Better
+              ? `Line 2 (${s2}) is priced ${edge.toFixed(2)}% cheaper than fair — take Line 2`
+              : l1Better
+              ? `Line 2 (${s2}) is overpriced by ${Math.abs(edge).toFixed(2)}% — stick with Line 1`
+              : 'Lines are roughly equivalent after accounting for the spread difference'}
           </div>
+          {fairP2 !== null && p2 !== null && (
+            <div className="text-xs text-gray-500 font-sans mt-1">
+              Fair price at {isNaN(s2) ? '–' : s2}: {fmtAmerican(probToAmerican(fairP2))}
+              {' '}· Actual: {fmtAmerican(o2)}
+            </div>
+          )}
         </Card>
       )}
 
-      {!sameSpread && !isNaN(s1) && !isNaN(s2) && p1 !== null && p2 !== null && (
+      {/* Spread pricing table */}
+      {tableRows.length > 0 && (
         <Card>
-          <p className="text-sm text-gray-400 font-sans">
-            <span className="text-yellow-400 font-semibold">Different {betType === 'spread' ? 'spreads' : 'totals'}: </span>
-            These are different bets. Compare implied probabilities individually — the better line depends on your estimated true probability of each outcome.
-          </p>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <StatBox label={`Line 1 (${s1 > 0 ? '+' : ''}${s1})`} value={fmtPct(p1)} />
-            <StatBox label={`Line 2 (${s2 > 0 ? '+' : ''}${s2})`} value={fmtPct(p2)} />
+          <div className="text-xs text-gray-400 uppercase tracking-wider mb-3 font-sans">
+            Fair Prices — All Spreads ({sport} empirical data, anchored at {s1} = {fmtAmerican(o1)})
           </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-sans">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  <th className="text-left py-1.5 px-2 text-xs text-gray-500 uppercase">Spread</th>
+                  <th className="text-right py-1.5 px-2 text-xs text-gray-500 uppercase">Fair Price</th>
+                  <th className="text-right py-1.5 px-2 text-xs text-gray-500 uppercase">Implied %</th>
+                  <th className="text-right py-1.5 px-2 text-xs text-gray-500 uppercase">Δ Prob</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map(({ sp, fair, am, delta }) => {
+                  const isAnchor = sp === s1
+                  const isLine2  = !isNaN(s2) && sp === s2
+                  // highlight key numbers: large delta means we're crossing a key margin
+                  const isKey = delta !== null && Math.abs(delta) >= 5
+                  return (
+                    <tr key={sp} className={`border-b border-gray-800/50 ${
+                      isAnchor ? 'bg-blue-900/30' : isLine2 ? 'bg-yellow-900/20' : ''
+                    }`}>
+                      <td className="py-1.5 px-2 font-mono">
+                        <span className={isAnchor ? 'text-blue-300 font-bold' : isLine2 ? 'text-yellow-300 font-bold' : 'text-gray-300'}>
+                          {sp > 0 ? '-' : '+'}{Math.abs(sp)}
+                        </span>
+                        {isAnchor && <span className="ml-1.5 text-xs text-blue-500">anchor</span>}
+                        {isLine2  && <span className="ml-1.5 text-xs text-yellow-500">line 2</span>}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono text-gray-200">
+                        {fmtAmerican(am)}
+                      </td>
+                      <td className="py-1.5 px-2 text-right font-mono text-gray-400">
+                        {(fair * 100).toFixed(1)}%
+                      </td>
+                      <td className={`py-1.5 px-2 text-right font-mono text-xs ${
+                        isKey ? 'text-yellow-400 font-bold' : 'text-gray-600'
+                      }`}>
+                        {delta !== null ? (delta > 0 ? '+' : '') + delta.toFixed(1) + '%' : '–'}
+                        {isKey && ' ★'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-600 font-sans mt-2">
+            ★ marks half-points crossing key numbers (large probability jumps). Spread shown as favorite laying points.
+          </p>
         </Card>
       )}
-
-      <p className="text-xs text-gray-600 font-sans">
-        You can mix American (−110), decimal (1.91), or fractional (10/11) odds formats.
-      </p>
     </div>
   )
 }
