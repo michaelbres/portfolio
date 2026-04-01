@@ -98,11 +98,11 @@ const MARGIN_DIST = {
 function fairProbAtSpread(s0, p0, s, dist) {
   if (s === s0) return p0
 
-  // Work in threshold space: T = -spread.
-  // P(cover) = P(Team A margin > T), which is always a step function of T
-  // with positive-index lookups: P(margin = k) = dist[|k|] / 2 for k ≠ 0.
-  const T0 = -s0
-  const T  = -s
+  // Work in threshold space: T = spread (positive = laying points, the natural input convention).
+  // User enters 3.5 for "team lays 3.5"; display flips it to show "-3.5".
+  // P(cover) = P(Team A margin > T), step function of T with dist[|k|]/2 at each integer k.
+  const T0 = s0
+  const T  = s
 
   const s0Int = s0 % 1 === 0
   const sInt  = s  % 1 === 0
