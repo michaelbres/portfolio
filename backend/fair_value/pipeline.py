@@ -42,6 +42,7 @@ from .stats_engine import (
     lineup_weighted_woba,
     batter_stats,
 )
+# stats_engine functions are all cross-season now; no season arg needed
 from .win_probability import (
     compute_game_fair_value,
     projected_innings,
@@ -77,45 +78,37 @@ def _enrich_sp_hand(sp_id: Optional[int], sp_hand: Optional[str]) -> Optional[st
 
 # ── Lineup builder ────────────────────────────────────────────────────────────
 
-def _build_lineup(db: Session, game_pk: int, team: str, season: int,
-                  sp_hand: Optional[str], team_abbr: str) -> tuple[list[dict], str]:
+def _build_lineup(db: Session, game_pk: int, team: str,
+                  sp_hand: Optional[str], is_home: bool) -> tuple[list[dict], str]:
     """
     Try confirmed boxscore lineup first; fall back to projected.
     Returns (slots, source_label).
     """
-    source = "projected"
-
-    # Attempt confirmed lineup via boxscore
     box = get_boxscore_lineups(game_pk)
-    confirmed_side = "home" if team == team_abbr else None
-    # We need to figure out which side (home/away) this team is.
-    # The caller passes team_abbr = the game's home_team or away_team.
-    # Here team IS team_abbr (we call this function once per team).
-    confirmed_slots = box.get("home", []) if team == team_abbr else box.get("away", [])
+    confirmed_slots = box.get("home", []) if is_home else box.get("away", [])
 
     if len(confirmed_slots) >= 8:
-        source = "confirmed"
+        from .constants import PA_WEIGHTS
         slots = []
         for s in confirmed_slots[:9]:
-            stats = batter_stats(db, s["player_id"], season, vs_hand=sp_hand)
+            stats = batter_stats(db, s["player_id"], vs_hand=sp_hand)
             order = s["batting_order"]
-            from .constants import PA_WEIGHTS
             slots.append({
-                "player_id":     s["player_id"],
-                "player_name":   s["player_name"],
-                "batter_hand":   s["batter_hand"] or "R",
-                "batting_order": order,
+                "player_id":       s["player_id"],
+                "player_name":     s["player_name"],
+                "batter_hand":     s["batter_hand"] or "R",
+                "batting_order":   order,
                 "woba_vs_sp_hand": stats["woba_blended"],
-                "woba_season":   stats["woba_season"],
-                "woba_recent":   stats["woba_recent"],
-                "woba_blended":  stats["woba_blended"],
-                "pa_weight":     PA_WEIGHTS[order - 1],
+                "woba_full":       stats["woba_full"],
+                "woba_recent":     stats["woba_recent"],
+                "woba_blended":    stats["woba_blended"],
+                "pa_weight":       PA_WEIGHTS[order - 1],
             })
-        return slots, source
+        return slots, "confirmed"
 
     # Fall back to projected lineup from recent Statcast data
-    slots = projected_lineup(db, team, season, sp_hand=sp_hand)
-    return slots, source
+    slots = projected_lineup(db, team, sp_hand=sp_hand)
+    return slots, "projected"
 
 
 # ── Core pipeline ─────────────────────────────────────────────────────────────
@@ -183,7 +176,7 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
 
         try:
             result = _process_game(
-                db=db, game=g, season=season,
+                db=db, game=g,
                 kalshi_lines=kalshi_lines,
             )
             if result:
@@ -196,7 +189,7 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
     return {"games": results, "games_computed": len(results), "error": None}
 
 
-def _process_game(db: Session, game: dict, season: int,
+def _process_game(db: Session, game: dict,
                   kalshi_lines: list[dict]) -> Optional[dict]:
     game_pk   = game["game_pk"]
     home_team = game["home_team"]
@@ -211,25 +204,14 @@ def _process_game(db: Session, game: dict, season: int,
     away_sp_name = game.get("away_sp_name") or "TBD"
     away_sp_hand = _enrich_sp_hand(away_sp_id, game.get("away_sp_hand"))
 
-    if home_sp_id:
-        home_sp_s = pitcher_stats(db, home_sp_id, season)
-    else:
-        home_sp_s = {
-            "woba_season": None, "pa_season": 0,
-            "woba_recent": None, "pa_recent": 0,
-            "woba_blended": LEAGUE_AVG_WOBA,
-            "pitches_per_inning": 15.5,
-        }
-
-    if away_sp_id:
-        away_sp_s = pitcher_stats(db, away_sp_id, season)
-    else:
-        away_sp_s = {
-            "woba_season": None, "pa_season": 0,
-            "woba_recent": None, "pa_recent": 0,
-            "woba_blended": LEAGUE_AVG_WOBA,
-            "pitches_per_inning": 15.5,
-        }
+    _sp_default = {
+        "woba_full": None, "pa_full": 0,
+        "woba_recent": None, "pa_recent": 0,
+        "woba_blended": LEAGUE_AVG_WOBA,
+        "pitches_per_inning": 15.5,
+    }
+    home_sp_s = pitcher_stats(db, home_sp_id) if home_sp_id else _sp_default
+    away_sp_s = pitcher_stats(db, away_sp_id) if away_sp_id else _sp_default
 
     # Check if a manual pitch limit override exists in the DB
     existing = db.query(FairValueGame).filter(
@@ -247,15 +229,15 @@ def _process_game(db: Session, game: dict, season: int,
         away_pitch_limit = _default_pitch_limit(away_sp_s)
 
     # ── Bullpen stats ─────────────────────────────────────────────────────────
-    home_bp = team_bullpen_stats(db, home_team, game["game_date"], season)
-    away_bp = team_bullpen_stats(db, away_team, game["game_date"], season)
+    home_bp = team_bullpen_stats(db, home_team, game["game_date"])
+    away_bp = team_bullpen_stats(db, away_team, game["game_date"])
 
     # ── Lineups ───────────────────────────────────────────────────────────────
     home_slots, home_src = _build_lineup(
-        db, game_pk, home_team, season, away_sp_hand, home_team
+        db, game_pk, home_team, sp_hand=away_sp_hand, is_home=True
     )
     away_slots, away_src = _build_lineup(
-        db, game_pk, away_team, season, home_sp_hand, home_team
+        db, game_pk, away_team, sp_hand=home_sp_hand, is_home=False
     )
 
     home_lineup_woba = lineup_weighted_woba(home_slots)
@@ -321,18 +303,18 @@ def _process_game(db: Session, game: dict, season: int,
 
     row.home_sp_pitches_per_inning = round(home_sp_s["pitches_per_inning"], 2)
     row.home_sp_proj_innings       = fv["home_sp_proj_innings"]
-    row.home_sp_woba_season        = home_sp_s["woba_season"]
+    row.home_sp_woba_season        = home_sp_s.get("woba_full")
     row.home_sp_woba_recent        = home_sp_s["woba_recent"]
     row.home_sp_woba_blended       = home_sp_s["woba_blended"]
-    row.home_sp_pa_season          = home_sp_s["pa_season"]
+    row.home_sp_pa_season          = home_sp_s.get("pa_full", 0)
     row.home_sp_pa_recent          = home_sp_s["pa_recent"]
 
     row.away_sp_pitches_per_inning = round(away_sp_s["pitches_per_inning"], 2)
     row.away_sp_proj_innings       = fv["away_sp_proj_innings"]
-    row.away_sp_woba_season        = away_sp_s["woba_season"]
+    row.away_sp_woba_season        = away_sp_s.get("woba_full")
     row.away_sp_woba_recent        = away_sp_s["woba_recent"]
     row.away_sp_woba_blended       = away_sp_s["woba_blended"]
-    row.away_sp_pa_season          = away_sp_s["pa_season"]
+    row.away_sp_pa_season          = away_sp_s.get("pa_full", 0)
     row.away_sp_pa_recent          = away_sp_s["pa_recent"]
 
     row.home_bp_woba_raw      = round(home_bp["woba_raw"], 4)
@@ -371,7 +353,7 @@ def _process_game(db: Session, game: dict, season: int,
             player_id=     slot.get("player_id"),
             player_name=   slot.get("player_name"),
             batter_hand=   slot.get("batter_hand"),
-            woba_season=   slot.get("woba_season"),
+            woba_season=   slot.get("woba_full"),
             woba_recent=   slot.get("woba_recent"),
             woba_blended=  slot.get("woba_blended"),
             woba_vs_sp_hand= slot.get("woba_vs_sp_hand"),
@@ -400,22 +382,19 @@ def _process_game(db: Session, game: dict, season: int,
 
 # ── Recalculate a single game (after pitch limit override) ────────────────────
 
-def recalculate_game(db: Session, game_pk: int, season: int = 2025) -> Optional[dict]:
+def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Optional[dict]:
     """
     Recompute fair value for a single game_pk, honouring any manual overrides
     already stored on the FairValueGame row.  Returns the updated row data.
+    season arg is kept for backwards compat but ignored (stats are cross-season).
     """
     row = db.query(FairValueGame).filter(FairValueGame.game_pk == game_pk).first()
     if not row:
         return None
 
-    # Re-fetch the game from our DB (no external call needed for recalc)
-    home_sp_s = pitcher_stats(db, row.home_sp_id, season) if row.home_sp_id else {
-        "woba_blended": LEAGUE_AVG_WOBA, "pitches_per_inning": 15.5,
-    }
-    away_sp_s = pitcher_stats(db, row.away_sp_id, season) if row.away_sp_id else {
-        "woba_blended": LEAGUE_AVG_WOBA, "pitches_per_inning": 15.5,
-    }
+    _sp_default = {"woba_blended": LEAGUE_AVG_WOBA, "pitches_per_inning": 15.5}
+    home_sp_s = pitcher_stats(db, row.home_sp_id) if row.home_sp_id else _sp_default
+    away_sp_s = pitcher_stats(db, row.away_sp_id) if row.away_sp_id else _sp_default
 
     pf = park_factor(row.home_team)
 
