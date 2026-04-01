@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Optional
+from typing import Optional, Any
 
 from sqlalchemy.orm import Session
 
@@ -120,8 +120,8 @@ def _build_lineup(db: Session, game_pk: int, team: str, season: int,
 
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
-def run_pipeline(game_date: date, db: Session, season: int = 2025,
-                 force: bool = False) -> list[dict]:
+def run_pipeline(game_date: date, db: Session, season: int | None = None,
+                 force: bool = False) -> dict[str, Any]:
     """
     Run the fair value pipeline for all regular-season games on *game_date*.
 
@@ -129,12 +129,15 @@ def run_pipeline(game_date: date, db: Session, season: int = 2025,
     ----------
     game_date  Target date.
     db         SQLAlchemy session (caller manages lifecycle).
-    season     MLB season year for Statcast queries.
+    season     MLB season year for Statcast queries. Defaults to game_date.year.
     force      If True, recompute even if rows already exist for today.
 
-    Returns list of result dicts (one per game).
+    Returns dict with keys: games (list), games_computed (int), error (str|None).
     """
-    log.info("Fair value pipeline: %s", game_date)
+    if season is None:
+        season = game_date.year
+
+    log.info("Fair value pipeline: %s  season=%d", game_date, season)
 
     # Check for existing rows (skip unless forced)
     if not force:
@@ -144,18 +147,21 @@ def run_pipeline(game_date: date, db: Session, season: int = 2025,
         if existing > 0:
             log.info("Already have %d games for %s; skipping (use force=True to override)",
                      existing, game_date)
-            return []
+            return {"games": [], "games_computed": 0,
+                    "error": f"Already computed {existing} game(s) for {game_date}. Use Force Recompute to refresh."}
 
     # 1. Schedule
     try:
         games = get_schedule(game_date)
     except Exception as exc:
+        msg = f"MLB Stats API error: {exc}"
         log.error("Schedule fetch failed: %s", exc)
-        return []
+        return {"games": [], "games_computed": 0, "error": msg}
 
     if not games:
-        log.info("No games scheduled on %s", game_date)
-        return []
+        msg = f"No regular-season games found on {game_date} via MLB Stats API."
+        log.info(msg)
+        return {"games": [], "games_computed": 0, "error": msg}
 
     log.info("Processing %d games", len(games))
 
@@ -187,7 +193,7 @@ def run_pipeline(game_date: date, db: Session, season: int = 2025,
 
     db.commit()
     log.info("Pipeline complete: %d games processed", len(results))
-    return results
+    return {"games": results, "games_computed": len(results), "error": None}
 
 
 def _process_game(db: Session, game: dict, season: int,

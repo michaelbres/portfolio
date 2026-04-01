@@ -37,7 +37,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("fetch_fair_value")
 
-CURRENT_SEASON = 2025
+# Season is inferred from the target date automatically
 
 
 def main():
@@ -64,14 +64,11 @@ def main():
 
     db = SessionLocal()
     try:
-        results = run_pipeline(
-            game_date=target,
-            db=db,
-            season=CURRENT_SEASON,
-            force=args.force,
-        )
-        log.info("Done. %d game(s) computed.", len(results))
-        for r in results:
+        outcome = run_pipeline(game_date=target, db=db, force=args.force)
+        log.info("Done. %d game(s) computed.", outcome["games_computed"])
+        if outcome.get("error"):
+            log.warning("Pipeline message: %s", outcome["error"])
+        for r in outcome["games"]:
             log.info(
                 "  %-3s @ %-3s  home %+d / away %+d  λ %.2f / %.2f",
                 r["away_team"], r["home_team"],

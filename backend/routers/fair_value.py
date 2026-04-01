@@ -25,7 +25,9 @@ from fair_value.pipeline import run_pipeline, recalculate_game, _row_to_dict
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fair-value", tags=["fair-value"])
 
-CURRENT_SEASON = 2025
+def _current_season(for_date: date) -> int:
+    """Use the year of the target date as the season for Statcast lookups."""
+    return for_date.year
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -127,7 +129,7 @@ def set_pitch_limit(
 
     db.commit()
 
-    updated = recalculate_game(db, game_pk, season=CURRENT_SEASON)
+    updated = recalculate_game(db, game_pk, season=_current_season(row.game_date))
     if not updated:
         raise HTTPException(500, "Recalculation failed.")
 
@@ -157,7 +159,7 @@ def remove_pitch_limit_override(
 
     db.commit()
 
-    updated = recalculate_game(db, game_pk, season=CURRENT_SEASON)
+    updated = recalculate_game(db, game_pk, season=_current_season(row.game_date))
     return {"game": updated}
 
 
@@ -182,5 +184,10 @@ def trigger_pipeline(
     else:
         d = date.today()
 
-    results = run_pipeline(d, db, season=CURRENT_SEASON, force=force)
-    return {"date": d.isoformat(), "games_computed": len(results), "results": results}
+    outcome = run_pipeline(d, db, season=_current_season(d), force=force)
+    return {
+        "date":           d.isoformat(),
+        "games_computed": outcome["games_computed"],
+        "error":          outcome.get("error"),
+        "results":        outcome["games"],
+    }

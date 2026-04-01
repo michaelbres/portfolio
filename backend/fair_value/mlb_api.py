@@ -36,14 +36,24 @@ def get_schedule(game_date: date) -> list[dict]:
         game_pk, game_time_utc, home_team, away_team, venue,
         home_sp_id, home_sp_name, home_sp_hand,
         away_sp_id, away_sp_name, away_sp_hand
+
+    Raises requests.exceptions.RequestException on network failure so the
+    caller can surface the error rather than silently returning 0 games.
     """
     date_str = game_date.strftime("%Y-%m-%d")
-    data = _get("/api/v1/schedule", {
-        "sportId": 1,
-        "date": date_str,
-        "gameType": "R",
-        "hydrate": "probablePitcher(note),team,linescore",
-    })
+
+    # Try regular season first; fall back to including exhibition/all-star
+    # in case the MLB API classifies Opening Series abroad differently.
+    for game_types in ("R", "R,E"):
+        data = _get("/api/v1/schedule", {
+            "sportId": 1,
+            "date": date_str,
+            "gameType": game_types,
+            "hydrate": "probablePitcher(note),team,linescore",
+        })
+        total = data.get("totalGames", 0)
+        if total > 0:
+            break
 
     games = []
     for date_entry in data.get("dates", []):
