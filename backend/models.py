@@ -1,5 +1,6 @@
 from sqlalchemy import (
-    Column, Integer, String, Float, Date, BigInteger, UniqueConstraint, DateTime
+    Column, Integer, String, Float, Date, BigInteger, UniqueConstraint,
+    DateTime, Boolean, Text
 )
 from sqlalchemy.sql import func
 from database import Base
@@ -134,3 +135,104 @@ class DataFetchLog(Base):
     rows_fetched = Column(Integer)
     status = Column(String(20))
     fetched_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── Fair Value Model Tables ────────────────────────────────────────────────────
+
+class FairValueGame(Base):
+    """One row per game per model run. Stores computed fair value odds."""
+    __tablename__ = "fair_value_games"
+
+    id = Column(Integer, primary_key=True)
+    game_pk = Column(BigInteger, unique=True, index=True, nullable=False)
+    game_date = Column(Date, index=True, nullable=False)
+    game_time_utc = Column(String(30))        # ISO string, nullable before schedule posts
+    home_team = Column(String(10), nullable=False)
+    away_team = Column(String(10), nullable=False)
+    venue = Column(String(100))
+
+    # Starting pitchers
+    home_sp_id = Column(Integer)
+    home_sp_name = Column(String(100))
+    home_sp_hand = Column(String(2))
+    away_sp_id = Column(Integer)
+    away_sp_name = Column(String(100))
+    away_sp_hand = Column(String(2))
+
+    # Pitch limits — manual_flag means the user set this, not the default
+    home_pitch_limit = Column(Integer)
+    home_pitch_limit_manual = Column(Boolean, default=False)
+    away_pitch_limit = Column(Integer)
+    away_pitch_limit_manual = Column(Boolean, default=False)
+
+    # Pitcher projections (blended season + last-N)
+    home_sp_pitches_per_inning = Column(Float)
+    home_sp_proj_innings = Column(Float)
+    home_sp_woba_season = Column(Float)
+    home_sp_woba_recent = Column(Float)
+    home_sp_woba_blended = Column(Float)
+    home_sp_pa_season = Column(Integer)
+    home_sp_pa_recent = Column(Integer)
+
+    away_sp_pitches_per_inning = Column(Float)
+    away_sp_proj_innings = Column(Float)
+    away_sp_woba_season = Column(Float)
+    away_sp_woba_recent = Column(Float)
+    away_sp_woba_blended = Column(Float)
+    away_sp_pa_season = Column(Integer)
+    away_sp_pa_recent = Column(Integer)
+
+    # Bullpen (pre-fatigue wOBA, post-fatigue wOBA)
+    home_bp_woba_raw = Column(Float)
+    home_bp_woba_fatigued = Column(Float)
+    away_bp_woba_raw = Column(Float)
+    away_bp_woba_fatigued = Column(Float)
+
+    # Lineup
+    home_lineup_woba = Column(Float)       # weighted by batting order + vs SP hand
+    away_lineup_woba = Column(Float)
+    home_lineup_source = Column(String(20))  # 'confirmed', 'projected', 'recent_avg'
+    away_lineup_source = Column(String(20))
+
+    # Park
+    park_factor = Column(Float)
+
+    # Model outputs
+    home_lambda = Column(Float)            # expected runs, home team offense
+    away_lambda = Column(Float)
+    home_win_prob = Column(Float)
+    away_win_prob = Column(Float)
+    home_fair_odds = Column(Integer)       # American odds (no vig)
+    away_fair_odds = Column(Integer)
+
+    # Market lines for comparison (optional, free sources only)
+    home_market_odds = Column(Integer)
+    away_market_odds = Column(Integer)
+    market_source = Column(String(50))
+
+    model_version = Column(String(20), default="1.0")
+    computed_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class FairValueLineupSlot(Base):
+    """Each batter slot in a game's projected/confirmed lineup."""
+    __tablename__ = "fair_value_lineup_slots"
+
+    id = Column(Integer, primary_key=True)
+    game_pk = Column(BigInteger, index=True, nullable=False)
+    team = Column(String(10), nullable=False)
+    batting_order = Column(Integer, nullable=False)   # 1–9
+    player_id = Column(Integer)
+    player_name = Column(String(100))
+    batter_hand = Column(String(2))
+    woba_season = Column(Float)
+    woba_recent = Column(Float)
+    woba_blended = Column(Float)
+    woba_vs_sp_hand = Column(Float)   # split vs opposing SP handedness
+    pa_weight = Column(Float)         # fraction of team PAs this slot gets
+
+    __table_args__ = (
+        UniqueConstraint("game_pk", "team", "batting_order",
+                         name="uq_lineup_slot"),
+    )

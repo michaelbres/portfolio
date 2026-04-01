@@ -10,6 +10,10 @@ const SPORTS = [
     color: 'bg-sv-red',
     icon: '⚾',
     available: true,
+    subLinks: [
+      { to: '/sports/mlb', label: 'Pitch Dashboard' },
+      { to: '/sports/mlb/fair-value', label: 'Fair Value Model' },
+    ],
   },
   {
     to: '#',
@@ -67,7 +71,20 @@ export default function SportsAnalytics() {
                 </div>
                 <div className="bg-white px-6 py-5">
                   <p className="text-gray-700 text-sm font-sans leading-relaxed">{s.description}</p>
-                  {s.available && (
+                  {s.available && s.subLinks ? (
+                    <div className="mt-4 flex flex-col gap-1">
+                      {s.subLinks.map((sl) => (
+                        <Link
+                          key={sl.to}
+                          to={sl.to}
+                          className="font-bangers text-sm tracking-widest text-sv-red border-b-2 border-sv-red w-fit"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {sl.label} →
+                        </Link>
+                      ))}
+                    </div>
+                  ) : s.available && (
                     <div className="mt-4">
                       <span className="font-bangers text-sm tracking-widest text-sv-red border-b-2 border-sv-red">
                         View Data →
