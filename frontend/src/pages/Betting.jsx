@@ -92,28 +92,40 @@ const MARGIN_DIST = {
 // but -3.0 has a push ~7.5% of the time, making it materially more valuable.
 
 function fairProbAtSpread(s0, p0, s, dist) {
+  if (s === s0) return p0
+
+  // Work in threshold space: T = -spread.
+  // P(cover) = P(Team A margin > T), which is always a step function of T
+  // with positive-index lookups: P(margin = k) = dist[|k|] / 2 for k ≠ 0.
+  const T0 = -s0
+  const T  = -s
+
   const s0Int = s0 % 1 === 0
   const sInt  = s  % 1 === 0
 
-  // 1. Recover P_excess from the anchor probability
-  //    If anchor is an integer spread, p0 = P_excess / (1 - pushP) → invert
-  const pushP_s0 = s0Int ? (dist[s0] || 0) / 2 : 0
-  const pExcess0 = s0Int ? p0 * (1 - pushP_s0) : p0
+  // 1. Recover P_excess = P(margin > T0) from anchor win probability.
+  //    Integer spreads are push-adjusted: p0 = P_excess / (1 - P_push).
+  const pushP0   = s0Int ? (dist[Math.abs(T0)] || 0) / 2 : 0
+  const pExcess0 = s0Int ? p0 * (1 - pushP0) : p0
 
-  // 2. Adjust P_excess to target spread
-  //    P_excess is a step function: decreases by dist[k]/2 at each integer k crossed
+  // 2. Adjust P_excess along the T axis.
+  //    P(margin > T) is a step function: each integer k crossed adds/subtracts dist[|k|]/2.
+  //    Moving T down (easier spread): add P(margin = k) for each k crossed.
+  //    Moving T up   (harder  spread): subtract P(margin = k) for each k crossed.
   let pExcess = pExcess0
-  const lo = Math.floor(Math.min(s0, s))
-  const hi = Math.floor(Math.max(s0, s))
-  for (let k = lo + 1; k <= hi; k++) {
-    pExcess += s > s0 ? -(dist[k] || 0) / 2 : (dist[k] || 0) / 2
+  const loK = Math.floor(Math.min(T0, T)) + 1
+  const hiK = Math.floor(Math.max(T0, T))
+  const goingDown = T < T0
+  for (let k = loK; k <= hiK; k++) {
+    const probK = k !== 0 ? (dist[Math.abs(k)] || 0) / 2 : 0
+    pExcess += goingDown ? probK : -probK
   }
   pExcess = Math.max(0.01, Math.min(0.99, pExcess))
 
-  // 3. Convert P_excess → P_win (add push value for integer targets)
+  // 3. Convert P_excess → P_win for integer target spreads (push returns stake).
   if (sInt) {
-    const pushP_s = (dist[s] || 0) / 2
-    return Math.max(0.01, Math.min(0.99, pExcess / (1 - pushP_s)))
+    const pushP = (dist[Math.abs(T)] || 0) / 2
+    return Math.max(0.01, Math.min(0.99, pExcess / (1 - pushP)))
   }
   return pExcess
 }
