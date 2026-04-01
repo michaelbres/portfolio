@@ -57,14 +57,21 @@ export default function FairValue() {
   async function runPipeline(force = false) {
     setRunning(true)
     setError(null)
+    setLastRun(null)
     try {
       const { data } = await api.post('/api/fair-value/run', null, {
         params: { game_date: selectedDate, force },
       })
-      setLastRun(`Computed ${data.games_computed} game(s)`)
-      await fetchGames(selectedDate)
+      if (data.games_computed > 0) {
+        setLastRun(`Computed ${data.games_computed} game(s)`)
+        await fetchGames(selectedDate)
+      } else if (data.error) {
+        setError(data.error)
+      } else {
+        setError('No games found for this date.')
+      }
     } catch (e) {
-      setError('Pipeline run failed. Check server logs.')
+      setError(e?.response?.data?.detail || 'Pipeline run failed. Check server logs.')
     } finally {
       setRunning(false)
     }
