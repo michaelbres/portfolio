@@ -74,21 +74,48 @@ const MARGIN_DIST = {
   },
 }
 
-// Given anchor half-point spread S0 priced at anchorProb,
-// compute the fair probability of covering target half-point spread S.
-// Moving to a harder spread subtracts the probability mass of each
-// integer margin crossed; easier spread adds it back.
-function fairProbAtSpread(s0, anchorProb, s, dist) {
-  if (s === s0) return anchorProb
-  let prob = anchorProb
-  const lo = Math.min(s0, s)
-  const hi = Math.max(s0, s)
-  // Integer margins whose probability mass changes coverage
-  // For half-point spreads, the relevant integers are floor(lo)+1 .. floor(hi)
-  for (let m = Math.floor(lo) + 1; m <= Math.floor(hi); m++) {
-    prob += s < s0 ? (dist[m] || 0) : -(dist[m] || 0)
+// ── Spread pricing model ──────────────────────────────────────────────────────
+//
+// Two concepts:
+//
+//   P_excess(S) = P(favorite wins by more than S)
+//              = P(margin ≥ floor(S)+1)   [step function, jumps at integers]
+//
+//   P_win(S)    = effective bet-win probability accounting for pushes
+//              = P_excess(S)              for half-point S  (no push possible)
+//              = P_excess(S) / (1 - P(push))  for integer S  (push returns stake)
+//
+// MARGIN_DIST[k] is P(game decided by exactly k) from EITHER side.
+// P(FAVORITE wins by exactly k) ≈ MARGIN_DIST[k] / 2  (near-even game assumption).
+//
+// Example: -3.5 and -3.0 have identical P_excess (both win on margin ≥ 4),
+// but -3.0 has a push ~7.5% of the time, making it materially more valuable.
+
+function fairProbAtSpread(s0, p0, s, dist) {
+  const s0Int = s0 % 1 === 0
+  const sInt  = s  % 1 === 0
+
+  // 1. Recover P_excess from the anchor probability
+  //    If anchor is an integer spread, p0 = P_excess / (1 - pushP) → invert
+  const pushP_s0 = s0Int ? (dist[s0] || 0) / 2 : 0
+  const pExcess0 = s0Int ? p0 * (1 - pushP_s0) : p0
+
+  // 2. Adjust P_excess to target spread
+  //    P_excess is a step function: decreases by dist[k]/2 at each integer k crossed
+  let pExcess = pExcess0
+  const lo = Math.floor(Math.min(s0, s))
+  const hi = Math.floor(Math.max(s0, s))
+  for (let k = lo + 1; k <= hi; k++) {
+    pExcess += s > s0 ? -(dist[k] || 0) / 2 : (dist[k] || 0) / 2
   }
-  return Math.max(0.02, Math.min(0.98, prob))
+  pExcess = Math.max(0.01, Math.min(0.99, pExcess))
+
+  // 3. Convert P_excess → P_win (add push value for integer targets)
+  if (sInt) {
+    const pushP_s = (dist[s] || 0) / 2
+    return Math.max(0.01, Math.min(0.99, pExcess / (1 - pushP_s)))
+  }
+  return pExcess
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
