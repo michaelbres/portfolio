@@ -1,23 +1,24 @@
 """
-Derives pitcher and batter projections from the Statcast data already in
-the local database.  No external requests are made here.
+Derives pitcher and batter projections from the Statcast database.
 
-Key functions
-─────────────
-pitcher_stats(db, pitcher_id, season)
-    → season-long and last-N-start wOBA allowed, PA counts,
-      pitches per inning
+All queries are CROSS-SEASON — no game_year filter.  Samples are capped to
+the last N game appearances so early-season numbers reflect a full year of
+prior history rather than a handful of April games.
 
-batter_stats(db, player_id, season, vs_hand)
-    → season-long and last-N-game wOBA, PA counts
+Sample windows
+──────────────
+  Pitchers  : last PITCHER_SAMPLE_STARTS (40) starts for the full sample,
+              last RECENT_N_STARTS (5) starts for the recent half of 50/50 blend
+  Batters   : last BATTER_SAMPLE_GAMES (200) game appearances for full sample,
+              last RECENT_N_BATTER_GAMES (15) for the recent half
+  Bullpen   : relievers evaluated over last BULLPEN_SAMPLE_GAMES (40) team games
 
-team_bullpen_stats(db, team, game_date, season)
-    → weighted average wOBA allowed for relievers + fatigue-adjusted version
-
-recent_lineup_for_team(db, team_id_or_abbr, season, sp_hand)
-    → list of (player_id, player_name, batter_hand, batting_order,
-               woba_vs_sp_hand, pa_weight)
-      derived from recent Statcast game logs when confirmed lineup is missing
+Lineup approach
+───────────────
+Every batter in the projected/confirmed lineup gets their own individual
+wOBA computed from their personal Statcast history (vs. the opposing SP's
+handedness), then those 9 values are aggregated into a single lineup wOBA
+weighted by batting-order PA exposure.
 """
 
 from __future__ import annotations
@@ -31,10 +32,16 @@ from sqlalchemy.orm import Session
 
 from .constants import (
     LEAGUE_AVG_WOBA,
-    MIN_PA_SEASON,
-    MIN_PA_RECENT,
-    RECENT_N_STARTS,
     PA_WEIGHTS,
+    PITCHER_SAMPLE_STARTS,
+    RECENT_N_STARTS,
+    BATTER_SAMPLE_GAMES,
+    RECENT_N_BATTER_GAMES,
+    BULLPEN_SAMPLE_GAMES,
+    MIN_PA_PITCHER_FULL,
+    MIN_PA_PITCHER_RECENT,
+    MIN_PA_BATTER_FULL,
+    MIN_PA_BATTER_RECENT,
     FATIGUE_YESTERDAY,
     FATIGUE_TWO_DAYS_AGO,
 )
@@ -42,267 +49,319 @@ from .constants import (
 log = logging.getLogger(__name__)
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── Regression helper ─────────────────────────────────────────────────────────
 
 def _regress(woba: Optional[float], pa: int, min_pa: int) -> float:
-    """Regress woba toward league average proportionally when sample is small."""
+    """Regress woba toward league average when the sample is small."""
     if woba is None or pa == 0:
         return LEAGUE_AVG_WOBA
     weight = min(pa, min_pa) / min_pa   # 0 → 1
-    return woba * weight + LEAGUE_AVG_WOBA * (1 - weight)
+    return woba * weight + LEAGUE_AVG_WOBA * (1.0 - weight)
 
 
-def blend(season_woba: Optional[float], season_pa: int,
-          recent_woba: Optional[float], recent_pa: int) -> float:
-    """50/50 blend of season and recent wOBA, each regressed to mean."""
-    s = _regress(season_woba, season_pa, MIN_PA_SEASON)
-    r = _regress(recent_woba, recent_pa, MIN_PA_RECENT)
-    return 0.5 * s + 0.5 * r
+def _blend(full_woba: Optional[float], full_pa: int,
+           recent_woba: Optional[float], recent_pa: int,
+           min_full: int, min_recent: int) -> float:
+    """50/50 blend of full-sample and recent-sample wOBA, each regressed."""
+    f = _regress(full_woba,   full_pa,   min_full)
+    r = _regress(recent_woba, recent_pa, min_recent)
+    return 0.5 * f + 0.5 * r
 
 
 # ── Pitcher stats ─────────────────────────────────────────────────────────────
 
-def pitcher_stats(db: Session, pitcher_id: int, season: int) -> dict:
+def pitcher_stats(db: Session, pitcher_id: int) -> dict:
     """
+    Cross-season pitcher projection using:
+      - Full sample  : last PITCHER_SAMPLE_STARTS (40) starts
+      - Recent sample: last RECENT_N_STARTS (5) starts
+      - 50/50 blend of both, each regressed toward league avg
+
     Returns:
-        woba_season, pa_season,
-        woba_recent,  pa_recent,
+        woba_full, pa_full,
+        woba_recent, pa_recent,
         woba_blended,
-        pitches_per_inning   (season average)
+        pitches_per_inning
     """
-    # --- season-long wOBA allowed -------------------------------------------
-    row = db.execute(text("""
-        SELECT
-            SUM(woba_value)                         AS woba_num,
-            SUM(woba_denom)                         AS pa,
-            COUNT(*)                                AS pitches,
-            COUNT(DISTINCT game_pk)                 AS starts
-        FROM statcast_pitches
-        WHERE pitcher      = :pid
-          AND game_year    = :season
-          AND woba_denom   > 0
-    """), {"pid": pitcher_id, "season": season}).fetchone()
-
-    season_pa     = int(row.pa or 0)
-    season_woba   = float(row.woba_num / row.pa) if (row.pa and row.pa > 0) else None
-    total_pitches = int(row.pitches or 0)
-    total_starts  = int(row.starts or 0)
-
-    # --- last N starts -------------------------------------------------------
-    # Find the game_pks of the last RECENT_N_STARTS starts by this pitcher
-    starts_row = db.execute(text("""
+    # ── Find last N start game_pks (cross-season) ─────────────────────────────
+    full_pks_rows = db.execute(text("""
         SELECT game_pk
         FROM statcast_pitches
-        WHERE pitcher   = :pid
-          AND game_year = :season
+        WHERE pitcher = :pid
         GROUP BY game_pk
         ORDER BY MAX(game_date) DESC
         LIMIT :n
-    """), {"pid": pitcher_id, "season": season, "n": RECENT_N_STARTS}).fetchall()
+    """), {"pid": pitcher_id, "n": PITCHER_SAMPLE_STARTS}).fetchall()
 
-    recent_game_pks = [r.game_pk for r in starts_row]
+    full_pks = [r.game_pk for r in full_pks_rows]
 
-    recent_woba: Optional[float] = None
-    recent_pa = 0
+    if not full_pks:
+        return {
+            "woba_full":          None, "pa_full":    0,
+            "woba_recent":        None, "pa_recent":  0,
+            "woba_blended":       LEAGUE_AVG_WOBA,
+            "pitches_per_inning": 15.5,
+            "total_starts":       0,
+        }
 
-    if recent_game_pks:
-        placeholders = ", ".join(str(pk) for pk in recent_game_pks)
-        r2 = db.execute(text(f"""
-            SELECT SUM(woba_value) AS woba_num, SUM(woba_denom) AS pa
-            FROM statcast_pitches
-            WHERE pitcher    = :pid
-              AND game_pk IN ({placeholders})
-              AND woba_denom > 0
-        """), {"pid": pitcher_id}).fetchone()
+    pk_list = ", ".join(str(pk) for pk in full_pks)
 
-        recent_pa   = int(r2.pa or 0)
-        recent_woba = float(r2.woba_num / r2.pa) if (r2.pa and r2.pa > 0) else None
+    # ── Full-sample wOBA allowed ──────────────────────────────────────────────
+    full_row = db.execute(text(f"""
+        SELECT SUM(woba_value) AS woba_num,
+               SUM(woba_denom) AS pa
+        FROM statcast_pitches
+        WHERE pitcher    = :pid
+          AND game_pk IN ({pk_list})
+          AND woba_denom > 0
+    """), {"pid": pitcher_id}).fetchone()
 
-    # --- pitches per inning --------------------------------------------------
-    # Estimate innings as max inning reached per start, averaged over starts
-    ppi_row = db.execute(text("""
-        SELECT
-            COUNT(*) AS total_pitches,
-            SUM(max_inn) AS total_innings
+    full_pa   = int(full_row.pa or 0)
+    full_woba = float(full_row.woba_num / full_row.pa) \
+                if (full_row.pa and full_row.pa > 0) else None
+
+    # ── Recent-sample wOBA allowed (last RECENT_N_STARTS) ────────────────────
+    recent_pks = full_pks[:RECENT_N_STARTS]
+    recent_pk_list = ", ".join(str(pk) for pk in recent_pks)
+
+    recent_row = db.execute(text(f"""
+        SELECT SUM(woba_value) AS woba_num,
+               SUM(woba_denom) AS pa
+        FROM statcast_pitches
+        WHERE pitcher    = :pid
+          AND game_pk IN ({recent_pk_list})
+          AND woba_denom > 0
+    """), {"pid": pitcher_id}).fetchone()
+
+    recent_pa   = int(recent_row.pa or 0)
+    recent_woba = float(recent_row.woba_num / recent_row.pa) \
+                  if (recent_row.pa and recent_row.pa > 0) else None
+
+    # ── Pitches per inning (full sample) ─────────────────────────────────────
+    ppi_row = db.execute(text(f"""
+        SELECT COUNT(*)        AS total_pitches,
+               SUM(max_inn)    AS total_innings
         FROM (
             SELECT game_pk, MAX(inning) AS max_inn
             FROM statcast_pitches
-            WHERE pitcher   = :pid
-              AND game_year = :season
+            WHERE pitcher = :pid
+              AND game_pk IN ({pk_list})
             GROUP BY game_pk
         ) sub
-    """), {"pid": pitcher_id, "season": season}).fetchone()
+    """), {"pid": pitcher_id}).fetchone()
 
     if ppi_row.total_innings and ppi_row.total_innings > 0:
-        pitches_per_inning = ppi_row.total_pitches / ppi_row.total_innings
+        ppi = ppi_row.total_pitches / ppi_row.total_innings
     else:
-        pitches_per_inning = 15.5   # league average fallback
-
-    # Cap to a reasonable range
-    pitches_per_inning = max(12.0, min(20.0, pitches_per_inning))
+        ppi = 15.5
+    ppi = max(12.0, min(20.0, ppi))
 
     return {
-        "woba_season":        season_woba,
-        "pa_season":          season_pa,
+        "woba_full":          full_woba,
+        "pa_full":            full_pa,
         "woba_recent":        recent_woba,
         "pa_recent":          recent_pa,
-        "woba_blended":       blend(season_woba, season_pa, recent_woba, recent_pa),
-        "pitches_per_inning": pitches_per_inning,
-        "total_starts":       total_starts,
+        "woba_blended":       _blend(full_woba, full_pa,
+                                     recent_woba, recent_pa,
+                                     MIN_PA_PITCHER_FULL,
+                                     MIN_PA_PITCHER_RECENT),
+        "pitches_per_inning": round(ppi, 2),
+        "total_starts":       len(full_pks),
     }
 
 
 # ── Batter stats ──────────────────────────────────────────────────────────────
 
-def batter_stats(db: Session, player_id: int, season: int,
+def batter_stats(db: Session, player_id: int,
                  vs_hand: Optional[str] = None) -> dict:
     """
-    Returns woba_season, pa_season, woba_recent, pa_recent, woba_blended
-    all relative to *vs_hand* ('R' or 'L').  If vs_hand is None, uses
-    overall splits.
+    Cross-season batter projection using:
+      - Full sample  : last BATTER_SAMPLE_GAMES (200) game appearances
+      - Recent sample: last RECENT_N_BATTER_GAMES (15) game appearances
+      - wOBA split vs the opposing SP's handedness (vs_hand = 'R' or 'L')
+
+    Returns:
+        woba_full, pa_full,
+        woba_recent, pa_recent,
+        woba_blended
     """
-    hand_filter = "AND p_throws = :hand" if vs_hand else ""
-    params_season = {"pid": player_id, "season": season}
-    if vs_hand:
-        params_season["hand"] = vs_hand
+    hand_clause = "AND p_throws = :hand" if vs_hand else ""
 
-    row = db.execute(text(f"""
-        SELECT SUM(woba_value) AS woba_num, SUM(woba_denom) AS pa
-        FROM statcast_pitches
-        WHERE batter       = :pid
-          AND game_year    = :season
-          AND woba_denom   > 0
-          {hand_filter}
-    """), params_season).fetchone()
-
-    season_pa   = int(row.pa or 0)
-    season_woba = float(row.woba_num / row.pa) if (row.pa and row.pa > 0) else None
-
-    # --- last N games this batter appeared in --------------------------------
-    games_row = db.execute(text("""
+    # ── Find last N game_pks for this batter ──────────────────────────────────
+    full_pks_rows = db.execute(text("""
         SELECT game_pk
         FROM statcast_pitches
-        WHERE batter     = :pid
-          AND game_year  = :season
+        WHERE batter = :pid
         GROUP BY game_pk
         ORDER BY MAX(game_date) DESC
         LIMIT :n
-    """), {"pid": player_id, "season": season, "n": RECENT_N_STARTS}).fetchall()
+    """), {"pid": player_id, "n": BATTER_SAMPLE_GAMES}).fetchall()
 
-    recent_woba: Optional[float] = None
-    recent_pa = 0
+    full_pks = [r.game_pk for r in full_pks_rows]
 
-    if games_row:
-        pks = ", ".join(str(r.game_pk) for r in games_row)
-        hand_f2 = "AND p_throws = :hand" if vs_hand else ""
-        params_r = {"pid": player_id}
-        if vs_hand:
-            params_r["hand"] = vs_hand
-        r2 = db.execute(text(f"""
-            SELECT SUM(woba_value) AS woba_num, SUM(woba_denom) AS pa
-            FROM statcast_pitches
-            WHERE batter      = :pid
-              AND game_pk IN ({pks})
-              AND woba_denom  > 0
-              {hand_f2}
-        """), params_r).fetchone()
+    if not full_pks:
+        return {
+            "woba_full":    None, "pa_full":   0,
+            "woba_recent":  None, "pa_recent": 0,
+            "woba_blended": LEAGUE_AVG_WOBA,
+        }
 
-        recent_pa   = int(r2.pa or 0)
-        recent_woba = float(r2.woba_num / r2.pa) if (r2.pa and r2.pa > 0) else None
+    pk_list = ", ".join(str(pk) for pk in full_pks)
+
+    base_params: dict = {"pid": player_id}
+    if vs_hand:
+        base_params["hand"] = vs_hand
+
+    # ── Full-sample wOBA ──────────────────────────────────────────────────────
+    full_row = db.execute(text(f"""
+        SELECT SUM(woba_value) AS woba_num,
+               SUM(woba_denom) AS pa
+        FROM statcast_pitches
+        WHERE batter      = :pid
+          AND game_pk  IN ({pk_list})
+          AND woba_denom  > 0
+          {hand_clause}
+    """), base_params).fetchone()
+
+    full_pa   = int(full_row.pa or 0)
+    full_woba = float(full_row.woba_num / full_row.pa) \
+                if (full_row.pa and full_row.pa > 0) else None
+
+    # ── Recent-sample wOBA ────────────────────────────────────────────────────
+    recent_pks    = full_pks[:RECENT_N_BATTER_GAMES]
+    recent_pk_list = ", ".join(str(pk) for pk in recent_pks)
+
+    recent_row = db.execute(text(f"""
+        SELECT SUM(woba_value) AS woba_num,
+               SUM(woba_denom) AS pa
+        FROM statcast_pitches
+        WHERE batter      = :pid
+          AND game_pk  IN ({recent_pk_list})
+          AND woba_denom  > 0
+          {hand_clause}
+    """), base_params).fetchone()
+
+    recent_pa   = int(recent_row.pa or 0)
+    recent_woba = float(recent_row.woba_num / recent_row.pa) \
+                  if (recent_row.pa and recent_row.pa > 0) else None
 
     return {
-        "woba_season":  season_woba,
-        "pa_season":    season_pa,
+        "woba_full":    full_woba,
+        "pa_full":      full_pa,
         "woba_recent":  recent_woba,
         "pa_recent":    recent_pa,
-        "woba_blended": blend(season_woba, season_pa, recent_woba, recent_pa),
+        "woba_blended": _blend(full_woba, full_pa,
+                               recent_woba, recent_pa,
+                               MIN_PA_BATTER_FULL,
+                               MIN_PA_BATTER_RECENT),
     }
 
 
-# ── Team lineup (projected from recent appearances) ───────────────────────────
+# ── Projected lineup ──────────────────────────────────────────────────────────
 
-def projected_lineup(db: Session, team: str, season: int,
+def projected_lineup(db: Session, team: str,
                      sp_hand: Optional[str] = None) -> list[dict]:
     """
-    Builds a projected 9-man lineup for *team* by finding the 9 batters who
-    appeared most frequently in recent games (last 14 days of the season or
-    last 15 game days), ordered by their median batting-order position.
+    Build a projected 9-man lineup for *team*.
 
-    Returns list of 9 dicts (batting_order 1-9):
-        player_id, player_name, batter_hand,
-        batting_order, woba_vs_sp_hand, pa_weight
+    Strategy:
+      1. Find the last BULLPEN_SAMPLE_GAMES (40) team game_pks.
+      2. Within those games identify the 9 batters who appeared most often
+         batting FOR this team, ordered by their median at-bat sequence.
+      3. For each batter call batter_stats() with vs_hand=sp_hand to get
+         their individual cross-season wOBA split.
+      4. Weight by batting-order PA exposure.
+
+    Returns list of 9 slot dicts.
     """
-    # Find the 9 most-used batters in recent games for this team
-    rows = db.execute(text("""
-        WITH recent_games AS (
-            SELECT DISTINCT game_pk
-            FROM statcast_pitches
-            WHERE (home_team = :team OR away_team = :team)
-              AND game_year  = :season
-            ORDER BY game_pk DESC
-            LIMIT 15
-        ),
-        batter_order AS (
-            SELECT
-                sp.batter                          AS player_id,
-                MAX(sp.batter_name)                AS player_name,
-                MAX(sp.stand)                      AS batter_hand,
-                COUNT(DISTINCT sp.game_pk)         AS games_appeared,
-                -- Approximate batting order: use the most common inning-1 at-bat order
-                -- (not perfect, but reasonable for projected lineup)
-                AVG(sp.at_bat_number)              AS avg_ab_num
-            FROM statcast_pitches sp
-            JOIN recent_games rg ON sp.game_pk = rg.game_pk
-            WHERE (sp.home_team = :team OR sp.away_team = :team)
-              AND sp.batter IS NOT NULL
-              -- Only include at-bats where this player was batting FOR the team
-              AND (
-                  (sp.inning_topbot = 'Top'  AND sp.away_team = :team)
-                  OR
-                  (sp.inning_topbot = 'Bot'  AND sp.home_team = :team)
-              )
-            GROUP BY sp.batter
-            ORDER BY games_appeared DESC, avg_ab_num ASC
-            LIMIT 9
-        )
-        SELECT * FROM batter_order ORDER BY avg_ab_num
-    """), {"team": team, "season": season}).fetchall()
+    # Last 40 game_pks this team appeared in
+    team_games_rows = db.execute(text("""
+        SELECT DISTINCT game_pk
+        FROM statcast_pitches
+        WHERE home_team = :team OR away_team = :team
+        ORDER BY game_pk DESC
+        LIMIT :n
+    """), {"team": team, "n": BULLPEN_SAMPLE_GAMES}).fetchall()
 
-    lineup = []
-    for order, row in enumerate(rows[:9], start=1):
-        stats = batter_stats(db, row.player_id, season, vs_hand=sp_hand)
-        lineup.append({
-            "player_id":     row.player_id,
-            "player_name":   row.player_name or "",
-            "batter_hand":   row.batter_hand or "R",
-            "batting_order": order,
+    team_game_pks = [r.game_pk for r in team_games_rows]
+
+    if not team_game_pks:
+        return _league_avg_lineup(sp_hand)
+
+    pk_list = ", ".join(str(pk) for pk in team_game_pks)
+
+    # Find the 9 most-used batters hitting FOR this team in those games.
+    # "Batting for the team" means: top-half inning when away_team=team,
+    # or bottom-half inning when home_team=team.
+    rows = db.execute(text(f"""
+        SELECT
+            batter                          AS player_id,
+            MAX(batter_name)                AS player_name,
+            MAX(stand)                      AS batter_hand,
+            COUNT(DISTINCT game_pk)         AS games_appeared,
+            AVG(at_bat_number)              AS avg_ab_num
+        FROM statcast_pitches
+        WHERE game_pk IN ({pk_list})
+          AND batter IS NOT NULL
+          AND (
+              (inning_topbot = 'Top' AND away_team = :team)
+              OR
+              (inning_topbot = 'Bot' AND home_team = :team)
+          )
+        GROUP BY batter
+        ORDER BY games_appeared DESC, avg_ab_num ASC
+        LIMIT 9
+    """), {"team": team}).fetchall()
+
+    if not rows:
+        return _league_avg_lineup(sp_hand)
+
+    # Sort by avg_ab_num so order 1 is the typical leadoff hitter
+    sorted_rows = sorted(rows, key=lambda r: r.avg_ab_num)
+
+    slots = []
+    for order, row in enumerate(sorted_rows[:9], start=1):
+        stats = batter_stats(db, row.player_id, vs_hand=sp_hand)
+        slots.append({
+            "player_id":       row.player_id,
+            "player_name":     row.player_name or "",
+            "batter_hand":     row.batter_hand or "R",
+            "batting_order":   order,
             "woba_vs_sp_hand": stats["woba_blended"],
-            "woba_season":   stats["woba_season"],
-            "woba_recent":   stats["woba_recent"],
-            "woba_blended":  stats["woba_blended"],
-            "pa_weight":     PA_WEIGHTS[order - 1],
+            "woba_full":       stats["woba_full"],
+            "woba_recent":     stats["woba_recent"],
+            "woba_blended":    stats["woba_blended"],
+            "pa_weight":       PA_WEIGHTS[order - 1],
         })
 
-    # Pad to 9 with league-average placeholders if fewer batters found
-    while len(lineup) < 9:
-        order = len(lineup) + 1
-        lineup.append({
-            "player_id":      None,
-            "player_name":    "Unknown",
-            "batter_hand":    "R",
-            "batting_order":  order,
-            "woba_vs_sp_hand": LEAGUE_AVG_WOBA,
-            "woba_season":    LEAGUE_AVG_WOBA,
-            "woba_recent":    LEAGUE_AVG_WOBA,
-            "woba_blended":   LEAGUE_AVG_WOBA,
-            "pa_weight":      PA_WEIGHTS[order - 1],
-        })
+    # Pad to 9 with league-average placeholders if needed
+    while len(slots) < 9:
+        order = len(slots) + 1
+        slots.append(_avg_slot(order))
 
-    return lineup
+    return slots
+
+
+def _avg_slot(order: int) -> dict:
+    return {
+        "player_id":       None,
+        "player_name":     "Unknown",
+        "batter_hand":     "R",
+        "batting_order":   order,
+        "woba_vs_sp_hand": LEAGUE_AVG_WOBA,
+        "woba_full":       LEAGUE_AVG_WOBA,
+        "woba_recent":     LEAGUE_AVG_WOBA,
+        "woba_blended":    LEAGUE_AVG_WOBA,
+        "pa_weight":       PA_WEIGHTS[order - 1],
+    }
+
+
+def _league_avg_lineup(sp_hand: Optional[str]) -> list[dict]:
+    return [_avg_slot(i) for i in range(1, 10)]
 
 
 def lineup_weighted_woba(slots: list[dict]) -> float:
-    """Weighted average wOBA across 9 lineup slots, weighted by PA weight."""
+    """Weighted average wOBA across lineup slots by PA weight."""
     total_w = sum(s["pa_weight"] for s in slots)
     if total_w == 0:
         return LEAGUE_AVG_WOBA
@@ -311,112 +370,109 @@ def lineup_weighted_woba(slots: list[dict]) -> float:
 
 # ── Bullpen stats ─────────────────────────────────────────────────────────────
 
-def team_bullpen_stats(db: Session, team: str, game_date: date,
-                       season: int) -> dict:
+def team_bullpen_stats(db: Session, team: str, game_date: date) -> dict:
     """
-    Computes:
-        woba_raw       – season+recent blended wOBA allowed by bullpen
-        woba_fatigued  – woba_raw adjusted for recent appearances
+    Compute bullpen quality for *team* entering *game_date*.
 
-    Strategy:
-    1. Find all pitchers who have relieved for *team* this season (appeared
-       in multiple games, not always as the first pitcher).
-    2. Blend their wOBA allowed (season vs recent, 50/50).
-    3. Identify who pitched in the last 1 or 2 days and apply fatigue penalty.
-    4. Weighted average by usage share (IP-based).
+    1. Find last BULLPEN_SAMPLE_GAMES (40) team game_pks before game_date.
+    2. Identify relievers (avg entry inning > 1.5, 3+ appearances).
+    3. Compute each reliever's individual wOBA allowed (cross-season, last 40 starts).
+    4. Weight by usage (pitch count) → team bullpen wOBA.
+    5. Apply fatigue penalties for pitchers who appeared yesterday / two days ago.
     """
-    # Identify bullpen pitchers: pitchers who started at inning > 1 in at
-    # least one appearance (or appeared in 3+ games as non-openers).
-    bp_rows = db.execute(text("""
-        WITH appearances AS (
-            SELECT
-                pitcher,
-                MAX(player_name)   AS pitcher_name,
-                game_pk,
-                MIN(inning)        AS first_inning,
-                COUNT(*)           AS pitches
-            FROM statcast_pitches
-            WHERE (home_team = :team OR away_team = :team)
-              AND game_year  = :season
-              AND (
-                  (inning_topbot = 'Top'  AND away_team = :team)
-                  OR
-                  (inning_topbot = 'Bot'  AND home_team = :team)
-              )
-            GROUP BY pitcher, game_pk
-        )
-        SELECT
-            pitcher,
-            MAX(pitcher_name)            AS pitcher_name,
-            COUNT(DISTINCT game_pk)      AS appearances,
-            SUM(pitches)                 AS total_pitches,
-            AVG(first_inning)            AS avg_entry_inning
-        FROM appearances
-        GROUP BY pitcher
-        HAVING AVG(first_inning) > 1.5   -- reliever heuristic
-           AND COUNT(DISTINCT game_pk) >= 3
-        ORDER BY total_pitches DESC
-        LIMIT 12
-    """), {"team": team, "season": season}).fetchall()
-
-    if not bp_rows:
-        return {
-            "woba_raw":      LEAGUE_AVG_WOBA,
-            "woba_fatigued": LEAGUE_AVG_WOBA,
-        }
-
-    # Compute recent appearances for fatigue
     yesterday = game_date - timedelta(days=1)
     two_ago   = game_date - timedelta(days=2)
 
-    fatigued_ids_yesterday: set[int] = set()
-    fatigued_ids_two_ago:   set[int] = set()
+    # Team game_pks strictly before game_date
+    team_games_rows = db.execute(text("""
+        SELECT DISTINCT game_pk
+        FROM statcast_pitches
+        WHERE (home_team = :team OR away_team = :team)
+          AND game_date  < :gd
+        ORDER BY game_pk DESC
+        LIMIT :n
+    """), {"team": team, "gd": game_date, "n": BULLPEN_SAMPLE_GAMES}).fetchall()
+
+    team_game_pks = [r.game_pk for r in team_games_rows]
+
+    if not team_game_pks:
+        return {"woba_raw": LEAGUE_AVG_WOBA, "woba_fatigued": LEAGUE_AVG_WOBA}
+
+    pk_list = ", ".join(str(pk) for pk in team_game_pks)
+
+    # Identify relievers: pitched FOR this team, avg entry inning > 1.5
+    bp_rows = db.execute(text(f"""
+        SELECT
+            pitcher,
+            MAX(player_name)            AS pitcher_name,
+            COUNT(DISTINCT game_pk)     AS appearances,
+            SUM(pitch_count)            AS total_pitches,
+            AVG(first_inning)           AS avg_entry_inning
+        FROM (
+            SELECT pitcher, player_name, game_pk,
+                   COUNT(*)    AS pitch_count,
+                   MIN(inning) AS first_inning
+            FROM statcast_pitches
+            WHERE game_pk IN ({pk_list})
+              AND (
+                  (inning_topbot = 'Top' AND away_team = :team)
+                  OR
+                  (inning_topbot = 'Bot' AND home_team = :team)
+              )
+            GROUP BY pitcher, player_name, game_pk
+        ) app
+        GROUP BY pitcher
+        HAVING AVG(first_inning) > 1.5
+           AND COUNT(DISTINCT game_pk) >= 3
+        ORDER BY total_pitches DESC
+        LIMIT 12
+    """), {"team": team}).fetchall()
+
+    if not bp_rows:
+        return {"woba_raw": LEAGUE_AVG_WOBA, "woba_fatigued": LEAGUE_AVG_WOBA}
+
+    # Check fatigue for each reliever
+    fatigued_yesterday: set[int] = set()
+    fatigued_two_ago:   set[int] = set()
 
     for bp in bp_rows:
-        # Check if this pitcher appeared in the last 1 or 2 days
         recent = db.execute(text("""
             SELECT DISTINCT game_date
             FROM statcast_pitches
-            WHERE pitcher  = :pid
+            WHERE pitcher   = :pid
               AND game_date IN (:y, :t)
         """), {"pid": bp.pitcher, "y": yesterday, "t": two_ago}).fetchall()
 
-        dates_appeared = {r.game_date for r in recent}
-        if yesterday in dates_appeared:
-            fatigued_ids_yesterday.add(bp.pitcher)
-        elif two_ago in dates_appeared:
-            fatigued_ids_two_ago.add(bp.pitcher)
+        appeared = {r.game_date for r in recent}
+        if yesterday in appeared:
+            fatigued_yesterday.add(bp.pitcher)
+        elif two_ago in appeared:
+            fatigued_two_ago.add(bp.pitcher)
 
-    # Compute blended wOBA for each reliever
+    # Per-reliever blended wOBA (using their own cross-season last-40-start data)
     reliever_stats = []
     for bp in bp_rows:
-        s = pitcher_stats(db, bp.pitcher, season)
+        s = pitcher_stats(db, bp.pitcher)
         reliever_stats.append({
-            "pitcher_id":    bp.pitcher,
-            "pitcher_name":  bp.pitcher_name,
-            "usage_weight":  bp.total_pitches,   # IP proxy
-            "woba_blended":  s["woba_blended"],
+            "pitcher_id":   bp.pitcher,
+            "usage_weight": float(bp.total_pitches or 1),
+            "woba_blended": s["woba_blended"],
         })
 
-    total_weight = sum(r["usage_weight"] for r in reliever_stats) or 1
+    total_weight = sum(r["usage_weight"] for r in reliever_stats) or 1.0
+    woba_raw = sum(r["woba_blended"] * r["usage_weight"]
+                   for r in reliever_stats) / total_weight
 
-    woba_raw = sum(
-        r["woba_blended"] * r["usage_weight"]
-        for r in reliever_stats
-    ) / total_weight
-
-    # Apply fatigue: penalise the TEAM's average by the fraction of bullpen
-    # that is fatigued × the penalty constant
-    n_relievers = len(reliever_stats)
+    n = len(reliever_stats)
     fatigue_delta = (
-        len(fatigued_ids_yesterday) / n_relievers * FATIGUE_YESTERDAY
-        + len(fatigued_ids_two_ago)  / n_relievers * FATIGUE_TWO_DAYS_AGO
+        len(fatigued_yesterday) / n * FATIGUE_YESTERDAY
+        + len(fatigued_two_ago)  / n * FATIGUE_TWO_DAYS_AGO
     )
 
     return {
-        "woba_raw":              woba_raw,
-        "woba_fatigued":         min(woba_raw + fatigue_delta, 0.420),
-        "fatigued_yesterday":    len(fatigued_ids_yesterday),
-        "fatigued_two_days_ago": len(fatigued_ids_two_ago),
-        "n_relievers":           n_relievers,
+        "woba_raw":              round(woba_raw, 4),
+        "woba_fatigued":         round(min(woba_raw + fatigue_delta, 0.420), 4),
+        "fatigued_yesterday":    len(fatigued_yesterday),
+        "fatigued_two_days_ago": len(fatigued_two_ago),
+        "n_relievers":           n,
     }

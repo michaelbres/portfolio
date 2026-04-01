@@ -17,12 +17,23 @@ WOBA_SCALE = 1.15
 # Default pitch limit when we have no data on a pitcher
 DEFAULT_PITCH_LIMIT = 95
 
-# Minimum plate appearances before we trust a sample; below this we regress
-MIN_PA_SEASON = 50
-MIN_PA_RECENT = 20
+# ── Cross-season rolling sample sizes ────────────────────────────────────────
+# Stats are pulled from the last N games/starts regardless of season year.
+# This ensures meaningful samples even at the start of a new season.
 
-# Number of recent starts to consider for the "recent" half of the 50/50 blend
-RECENT_N_STARTS = 5
+PITCHER_SAMPLE_STARTS   = 40   # full sample: last 40 starts (~1 full season)
+RECENT_N_STARTS         = 5    # recent sample for the 50/50 blend
+
+BATTER_SAMPLE_GAMES     = 200  # full sample: last 200 game appearances
+RECENT_N_BATTER_GAMES   = 15   # recent sample for the 50/50 blend
+
+BULLPEN_SAMPLE_GAMES    = 40   # team games used to identify/evaluate relievers
+
+# Minimum PA before a sample is trusted; below this we regress toward league avg
+MIN_PA_PITCHER_FULL     = 250  # ~3 starts
+MIN_PA_PITCHER_RECENT   = 60   # ~1 start
+MIN_PA_BATTER_FULL      = 150  # ~37 games
+MIN_PA_BATTER_RECENT    = 25   # ~6 games
 
 # Home field advantage: multiplier applied to home lambda (≈ +3.3% run scoring)
 # Calibrated so equal teams produce ~54% home win rate.

@@ -148,7 +148,7 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
           <span className="text-gray-400">wOBA:</span>{' '}
           <span className="font-mono">{fmtWoba(wobaBlended)}</span>
           <span className="text-gray-400 ml-1">
-            ({paSeason ?? 0}PA / {paRecent ?? 0} rec)
+            ({paSeason ?? 0}PA-full / {paRecent ?? 0} rec)
           </span>
         </div>
       </div>
