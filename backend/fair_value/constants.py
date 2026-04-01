@@ -35,6 +35,33 @@ MIN_PA_PITCHER_RECENT   = 60   # ~1 start
 MIN_PA_BATTER_FULL      = 150  # ~37 games
 MIN_PA_BATTER_RECENT    = 25   # ~6 games
 
+# Minimum IP thresholds for xFIP regression
+MIN_IP_PITCHER_FULL     = 80   # ~13 starts
+MIN_IP_PITCHER_RECENT   = 20   # ~3-4 starts
+
+# ── xFIP constants ────────────────────────────────────────────────────────────
+# xFIP = ((13 × FB × lgHR/FB) + (3 × (BB + HBP)) - (2 × K)) / IP + cFIP
+CFIP              = 3.20    # constant to center xFIP around league ERA
+LG_HR_PER_FB      = 0.130   # league average HR per fly ball
+LEAGUE_AVG_XFIP   = 4.26    # league average xFIP (ERA scale, for normalisation)
+
+# ── Negative binomial dispersion ───────────────────────────────────────────────
+# NegBin variance = μ + μ²/r.  Lower r = more overdispersion.
+# r=3.0 reflects observed overdispersion in MLB run scoring (~2.5× Poisson var).
+NEGBIN_DISPERSION = 3.0
+
+# ── Calibration ────────────────────────────────────────────────────────────────
+# Power calibration: p_cal = 1/(1 + ((1-p)/p)^alpha).
+# alpha=1.0 is identity; tune after accumulating historical game results.
+CALIBRATION_ALPHA = 1.0
+
+# ── Team defense factor bounds ─────────────────────────────────────────────────
+# Factor = (actual wOBA on contact) / (xwOBA on contact) when fielding.
+# Capped to prevent outliers from dominating.
+DEFENSE_FACTOR_FLOOR  = 0.93
+DEFENSE_FACTOR_CAP    = 1.07
+MIN_BIP_DEFENSE       = 600   # min balls-in-play before defence factor is trusted
+
 # Home field advantage: multiplier applied to home lambda (≈ +3.3% run scoring)
 # Calibrated so equal teams produce ~54% home win rate.
 HOME_LAMBDA_FACTOR = 1.033

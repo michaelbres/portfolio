@@ -24,6 +24,7 @@ weighted by batting-order PA exposure.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, timedelta
 from typing import Optional
 
@@ -40,10 +41,19 @@ from .constants import (
     BULLPEN_SAMPLE_GAMES,
     MIN_PA_PITCHER_FULL,
     MIN_PA_PITCHER_RECENT,
+    MIN_IP_PITCHER_FULL,
+    MIN_IP_PITCHER_RECENT,
     MIN_PA_BATTER_FULL,
     MIN_PA_BATTER_RECENT,
     FATIGUE_YESTERDAY,
     FATIGUE_TWO_DAYS_AGO,
+    CFIP,
+    LG_HR_PER_FB,
+    LEAGUE_AVG_XFIP,
+    HOME_LAMBDA_FACTOR,
+    DEFENSE_FACTOR_FLOOR,
+    DEFENSE_FACTOR_CAP,
+    MIN_BIP_DEFENSE,
 )
 
 log = logging.getLogger(__name__)
@@ -66,6 +76,83 @@ def _blend(full_woba: Optional[float], full_pa: int,
     f = _regress(full_woba,   full_pa,   min_full)
     r = _regress(recent_woba, recent_pa, min_recent)
     return 0.5 * f + 0.5 * r
+
+
+def _regress_xfip(xfip: Optional[float], ip: float, min_ip: float) -> float:
+    """Regress xFIP toward league average when innings sample is small."""
+    if xfip is None or ip <= 0:
+        return LEAGUE_AVG_XFIP
+    weight = min(ip, min_ip) / min_ip
+    return xfip * weight + LEAGUE_AVG_XFIP * (1.0 - weight)
+
+
+def _blend_xfip(full_xfip: Optional[float], full_ip: float,
+                recent_xfip: Optional[float], recent_ip: float) -> float:
+    """50/50 blend of full and recent xFIP, each regressed by IP."""
+    f = _regress_xfip(full_xfip,   full_ip,   MIN_IP_PITCHER_FULL)
+    r = _regress_xfip(recent_xfip, recent_ip, MIN_IP_PITCHER_RECENT)
+    return 0.5 * f + 0.5 * r
+
+
+# ── xFIP computation ──────────────────────────────────────────────────────────
+
+def _compute_xfip(db: Session, pitcher_id: int,
+                  game_pks: list[int]) -> dict:
+    """
+    Compute xFIP for *pitcher_id* over the given *game_pks*.
+
+    xFIP = ((13 × FB × lgHR/FB) + (3 × (BB + HBP)) - (2 × K)) / IP + cFIP
+
+    IP is estimated as the sum of MAX(inning) pitched per game (a reasonable
+    proxy that matches the existing pitches-per-inning calculation).
+
+    Returns dict with keys: xfip, ip, k, bb, hbp, fb.
+    """
+    if not game_pks:
+        return {"xfip": None, "ip": 0.0, "k": 0, "bb": 0, "hbp": 0, "fb": 0}
+
+    pk_list = ", ".join(str(pk) for pk in game_pks)
+
+    # K, BB, HBP, FB from last-pitch-of-PA rows (events IS NOT NULL)
+    row = db.execute(text(f"""
+        SELECT
+            SUM(CASE WHEN events IN ('strikeout', 'strikeout_double_play')
+                     THEN 1 ELSE 0 END)                    AS k,
+            SUM(CASE WHEN events = 'walk'                  THEN 1 ELSE 0 END) AS bb,
+            SUM(CASE WHEN events = 'hit_by_pitch'          THEN 1 ELSE 0 END) AS hbp,
+            SUM(CASE WHEN bb_type IN ('fly_ball', 'popup') THEN 1 ELSE 0 END) AS fb
+        FROM statcast_pitches
+        WHERE pitcher  = :pid
+          AND game_pk IN ({pk_list})
+          AND events  IS NOT NULL
+    """), {"pid": pitcher_id}).fetchone()
+
+    # IP proxy: sum of max inning pitched per start
+    ip_row = db.execute(text(f"""
+        SELECT SUM(max_inn) AS ip_proxy
+        FROM (
+            SELECT game_pk, MAX(inning) AS max_inn
+            FROM statcast_pitches
+            WHERE pitcher  = :pid
+              AND game_pk IN ({pk_list})
+            GROUP BY game_pk
+        ) sub
+    """), {"pid": pitcher_id}).fetchone()
+
+    k   = int(row.k   or 0)
+    bb  = int(row.bb  or 0)
+    hbp = int(row.hbp or 0)
+    fb  = int(row.fb  or 0)
+    ip  = float(ip_row.ip_proxy or 0.0)
+
+    if ip < 1.0:
+        return {"xfip": None, "ip": ip, "k": k, "bb": bb, "hbp": hbp, "fb": fb}
+
+    xfip_raw = ((13.0 * fb * LG_HR_PER_FB) + (3.0 * (bb + hbp)) - (2.0 * k)) / ip + CFIP
+    xfip = max(1.50, min(8.00, xfip_raw))
+
+    return {"xfip": round(xfip, 3), "ip": round(ip, 1),
+            "k": k, "bb": bb, "hbp": hbp, "fb": fb}
 
 
 # ── Pitcher stats ─────────────────────────────────────────────────────────────
@@ -100,6 +187,9 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
             "woba_full":          None, "pa_full":    0,
             "woba_recent":        None, "pa_recent":  0,
             "woba_blended":       LEAGUE_AVG_WOBA,
+            "xfip_full":          None, "xfip_recent": None,
+            "xfip_blended":       LEAGUE_AVG_XFIP,
+            "ip_full":            0.0,  "ip_recent":   0.0,
             "pitches_per_inning": 15.5,
             "total_starts":       0,
         }
@@ -156,6 +246,15 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
         ppi = 15.5
     ppi = max(12.0, min(20.0, ppi))
 
+    # ── xFIP (full sample and recent sample) ─────────────────────────────────
+    xfip_full_d   = _compute_xfip(db, pitcher_id, full_pks)
+    xfip_recent_d = _compute_xfip(db, pitcher_id, recent_pks)
+
+    xfip_full   = xfip_full_d["xfip"]
+    xfip_recent = xfip_recent_d["xfip"]
+    ip_full     = xfip_full_d["ip"]
+    ip_recent   = xfip_recent_d["ip"]
+
     return {
         "woba_full":          full_woba,
         "pa_full":            full_pa,
@@ -165,6 +264,12 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
                                      recent_woba, recent_pa,
                                      MIN_PA_PITCHER_FULL,
                                      MIN_PA_PITCHER_RECENT),
+        "xfip_full":          xfip_full,
+        "xfip_recent":        xfip_recent,
+        "xfip_blended":       _blend_xfip(xfip_full,   ip_full,
+                                           xfip_recent, ip_recent),
+        "ip_full":            ip_full,
+        "ip_recent":          ip_recent,
         "pitches_per_inning": round(ppi, 2),
         "total_starts":       len(full_pks),
     }
@@ -476,3 +581,140 @@ def team_bullpen_stats(db: Session, team: str, game_date: date) -> dict:
         "fatigued_two_days_ago": len(fatigued_two_ago),
         "n_relievers":           n,
     }
+
+
+# ── Team defense factor ───────────────────────────────────────────────────────
+
+def team_defense_factor(db: Session, team: str, game_date: date) -> float:
+    """
+    Compute a team's defensive quality entering *game_date*.
+
+    Factor = (actual wOBA on contact while fielding) /
+             (estimated wOBA on contact while fielding using Statcast xwOBA).
+
+    > 1.0  →  poor defense (allows more hits than exit-velocity expects)
+    < 1.0  →  good defense
+
+    This factor is applied to the OPPOSING team's lambda:
+      - Away defense factor multiplies lambda_home
+      - Home defense factor multiplies lambda_away
+
+    Falls back to 1.0 (neutral) if data is insufficient or xwOBA column is absent.
+    """
+    try:
+        team_games = db.execute(text("""
+            SELECT DISTINCT game_pk
+            FROM statcast_pitches
+            WHERE (home_team = :team OR away_team = :team)
+              AND game_date  < :gd
+            ORDER BY game_pk DESC
+            LIMIT :n
+        """), {"team": team, "gd": game_date, "n": BULLPEN_SAMPLE_GAMES}).fetchall()
+
+        if not team_games:
+            return 1.0
+
+        pk_list = ", ".join(str(r.game_pk) for r in team_games)
+
+        # Balls in play WHILE this team is fielding.
+        # Home team fields in Top half; away team fields in Bot half.
+        row = db.execute(text(f"""
+            SELECT
+                SUM(woba_value)                       AS actual_woba_num,
+                SUM(woba_denom)                       AS bip_count,
+                SUM(estimated_woba_using_speedangle)  AS xwoba_num
+            FROM statcast_pitches
+            WHERE game_pk IN ({pk_list})
+              AND (
+                  (home_team = :team AND inning_topbot = 'Top')
+                  OR
+                  (away_team = :team AND inning_topbot = 'Bot')
+              )
+              AND bb_type   IS NOT NULL
+              AND events    != 'home_run'
+              AND woba_denom > 0
+              AND estimated_woba_using_speedangle IS NOT NULL
+        """), {"team": team}).fetchone()
+
+        bip = int(row.bip_count or 0)
+        if bip < 50 or not row.xwoba_num:
+            return 1.0
+
+        actual = float(row.actual_woba_num) / bip
+        xwoba  = float(row.xwoba_num)       / bip
+
+        if xwoba < 0.01:
+            return 1.0
+
+        raw_factor = actual / xwoba
+
+        # Regress toward 1.0 based on sample size
+        weight = min(bip, MIN_BIP_DEFENSE) / MIN_BIP_DEFENSE
+        factor = raw_factor * weight + 1.0 * (1.0 - weight)
+
+        return max(DEFENSE_FACTOR_FLOOR, min(DEFENSE_FACTOR_CAP, round(factor, 4)))
+
+    except Exception:
+        return 1.0
+
+
+# ── Team home-field advantage factor ─────────────────────────────────────────
+
+def team_hfa_factor(db: Session, team: str) -> float:
+    """
+    Compute team-specific home-field advantage λ-multiplier from historical
+    home win rate.
+
+    Formula:  hfa = 1 + 2.507 × (hw_rate − 0.5) / sqrt(9)
+    (Linear normal approximation; validated: hw_rate=0.54 → hfa≈1.033)
+
+    Regressed toward the global HOME_LAMBDA_FACTOR (1.033) when sample < 300 games.
+    Falls back to HOME_LAMBDA_FACTOR on error.
+    """
+    try:
+        # Use MAX(post_home_score) / MAX(post_away_score) per game_pk.
+        # post_*_score is monotonically increasing so MAX gives final score.
+        row = db.execute(text("""
+            SELECT
+                COUNT(DISTINCT game_pk)                              AS home_games,
+                SUM(CASE WHEN final_home > final_away THEN 1 ELSE 0 END) AS home_wins
+            FROM (
+                SELECT game_pk,
+                       MAX(post_home_score) AS final_home,
+                       MAX(post_away_score) AS final_away
+                FROM statcast_pitches
+                WHERE home_team = :team
+                  AND inning    >= 9
+                GROUP BY game_pk
+            ) t
+        """), {"team": team}).fetchone()
+
+        home_games = int(row.home_games or 0)
+        home_wins  = int(row.home_wins  or 0)
+
+        if home_games < 50:
+            return HOME_LAMBDA_FACTOR
+
+        hw_rate = home_wins / home_games
+        raw_hfa = 1.0 + 2.507 * (hw_rate - 0.5) / math.sqrt(9.0)
+
+        # Regress toward global default
+        weight  = min(home_games, 300) / 300
+        hfa     = raw_hfa * weight + HOME_LAMBDA_FACTOR * (1.0 - weight)
+
+        return max(0.98, min(1.08, round(hfa, 4)))
+
+    except Exception:
+        return HOME_LAMBDA_FACTOR
+
+
+# ── Umpire run factor ─────────────────────────────────────────────────────────
+
+def umpire_run_factor(db: Session, umpire_name: Optional[str]) -> float:
+    """
+    Run environment multiplier for the home-plate umpire.
+
+    Placeholder — returns 1.0 until umpire assignment data is integrated.
+    A tight-zone umpire → factor < 1.0; loose zone → factor > 1.0.
+    """
+    return 1.0
