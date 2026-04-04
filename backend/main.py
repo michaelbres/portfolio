@@ -5,7 +5,26 @@ from database import engine, Base
 from routers import mlb
 from routers import fair_value
 
-Base.metadata.create_all(bind=engine)
+
+def _run_migrations():
+    """
+    Additive schema migrations — safe to run on every startup.
+    Only adds columns/tables that don't exist yet; never drops or alters.
+    """
+    from sqlalchemy import text
+    stmts = [
+        # v2.0 — xFIP and weather carry factor
+        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_sp_xfip_blended FLOAT",
+        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
+        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor  FLOAT",
+    ]
+    with engine.begin() as conn:
+        for sql in stmts:
+            conn.execute(text(sql))
+
+
+Base.metadata.create_all(bind=engine)   # creates new tables (fair_value_calibration etc.)
+_run_migrations()                        # adds new columns to existing tables
 
 app = FastAPI(title="Portfolio API", version="1.0.0")
 
