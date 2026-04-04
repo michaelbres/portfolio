@@ -346,18 +346,22 @@ def _process_game(db: Session, game: dict,
     row.home_sp_pitches_per_inning = round(home_sp_s["pitches_per_inning"], 2)
     row.home_sp_proj_innings       = fv["home_sp_proj_innings"]
     row.home_sp_woba_season        = home_sp_s.get("woba_full")
-    row.home_sp_woba_recent        = home_sp_s["woba_recent"]
-    row.home_sp_woba_blended       = home_sp_s["woba_blended"]
+    row.home_sp_woba_recent        = home_sp_s.get("woba_recent")
+    row.home_sp_woba_blended       = home_sp_s.get("woba_blended")
+    row.home_sp_xfip_blended       = home_sp_s.get("xfip_blended")
     row.home_sp_pa_season          = home_sp_s.get("pa_full", 0)
-    row.home_sp_pa_recent          = home_sp_s["pa_recent"]
+    row.home_sp_pa_recent          = home_sp_s.get("pa_recent", 0)
 
     row.away_sp_pitches_per_inning = round(away_sp_s["pitches_per_inning"], 2)
     row.away_sp_proj_innings       = fv["away_sp_proj_innings"]
     row.away_sp_woba_season        = away_sp_s.get("woba_full")
-    row.away_sp_woba_recent        = away_sp_s["woba_recent"]
-    row.away_sp_woba_blended       = away_sp_s["woba_blended"]
+    row.away_sp_woba_recent        = away_sp_s.get("woba_recent")
+    row.away_sp_woba_blended       = away_sp_s.get("woba_blended")
+    row.away_sp_xfip_blended       = away_sp_s.get("xfip_blended")
     row.away_sp_pa_season          = away_sp_s.get("pa_full", 0)
-    row.away_sp_pa_recent          = away_sp_s["pa_recent"]
+    row.away_sp_pa_recent          = away_sp_s.get("pa_recent", 0)
+
+    row.weather_carry_factor = w_carry
 
     row.home_bp_woba_raw      = round(home_bp["woba_raw"], 4)
     row.home_bp_woba_fatigued = round(home_bp["woba_fatigued"], 4)

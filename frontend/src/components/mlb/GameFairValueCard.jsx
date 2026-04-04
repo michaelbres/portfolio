@@ -25,6 +25,17 @@ function fmtInn(v) {
   return third === 0 ? `${full}.0` : `${full}.${third}`
 }
 
+function fmtXfip(v) {
+  if (v == null) return null
+  return v.toFixed(2)
+}
+
+function weatherLabel(carry) {
+  if (carry == null || Math.abs(carry - 1.0) < 0.005) return null
+  const pct = ((carry - 1.0) * 100).toFixed(1)
+  return { text: `${carry > 1.0 ? '+' : ''}${pct}% carry`, hot: carry > 1.0 }
+}
+
 function edgeLabel(modelOdds, marketOdds) {
   if (modelOdds == null || marketOdds == null) return null
   const toProb = (o) => o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100)
@@ -119,7 +130,8 @@ function PitchInput({ gamePk, side, defaultLimit, isManual, onUpdate }) {
 // ── SP row ────────────────────────────────────────────────────────────────────
 
 function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
-                 wobaBlended, paSeason, paRecent, gamePk, side, onUpdate }) {
+                 xfipBlended, wobaBlended, paSeason, paRecent, gamePk, side, onUpdate }) {
+  const xfip = fmtXfip(xfipBlended)
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-baseline gap-2">
@@ -144,13 +156,21 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
           <span className="text-gray-400">Inn:</span>{' '}
           <span className="font-mono">{fmtInn(projInn)}</span>
         </div>
-        <div className="text-xs text-gray-600">
-          <span className="text-gray-400">wOBA:</span>{' '}
-          <span className="font-mono">{fmtWoba(wobaBlended)}</span>
-          <span className="text-gray-400 ml-1">
-            ({paSeason ?? 0}PA-full / {paRecent ?? 0} rec)
-          </span>
-        </div>
+        {xfip != null ? (
+          <div className="text-xs text-gray-600">
+            <span className="text-gray-400">xFIP:</span>{' '}
+            <span className="font-mono font-bold">{xfip}</span>
+            <span className="text-gray-400 ml-1">(wOBA {fmtWoba(wobaBlended)})</span>
+          </div>
+        ) : (
+          <div className="text-xs text-gray-600">
+            <span className="text-gray-400">wOBA:</span>{' '}
+            <span className="font-mono">{fmtWoba(wobaBlended)}</span>
+            <span className="text-gray-400 ml-1">
+              ({paSeason ?? 0}PA full / {paRecent ?? 0} rec)
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -193,6 +213,7 @@ export default function GameFairValueCard({ game: initialGame }) {
     : null
 
   const homeIsFav = (game.home_win_prob ?? 0.5) >= 0.5
+  const weather   = weatherLabel(game.weather_carry_factor)
 
   const lineupLabel = (src) => {
     if (src === 'confirmed') return { text: 'Confirmed', cls: 'bg-green-400 text-green-900' }
@@ -215,6 +236,13 @@ export default function GameFairValueCard({ game: initialGame }) {
         </div>
         <div className="flex items-center gap-2">
           {gameTime && <span className="text-xs text-gray-400">{gameTime}</span>}
+          {weather && (
+            <span className={`text-xs px-2 py-0.5 font-bold ${
+              weather.hot ? 'bg-orange-500 text-white' : 'bg-sky-500 text-white'
+            }`}>
+              {weather.text}
+            </span>
+          )}
           <span className="text-xs bg-gray-700 px-2 py-0.5">
             PF {game.park_factor?.toFixed(2)}
           </span>
@@ -252,6 +280,7 @@ export default function GameFairValueCard({ game: initialGame }) {
             pitchLimit={game.away_pitch_limit}
             isManual={game.away_pitch_limit_manual}
             projInn={game.away_sp_proj_innings}
+            xfipBlended={game.away_sp_xfip_blended}
             wobaBlended={game.away_sp_woba_blended}
             paSeason={game.away_sp_pa_season}
             paRecent={game.away_sp_pa_recent}
@@ -266,6 +295,7 @@ export default function GameFairValueCard({ game: initialGame }) {
             pitchLimit={game.home_pitch_limit}
             isManual={game.home_pitch_limit_manual}
             projInn={game.home_sp_proj_innings}
+            xfipBlended={game.home_sp_xfip_blended}
             wobaBlended={game.home_sp_woba_blended}
             paSeason={game.home_sp_pa_season}
             paRecent={game.home_sp_pa_recent}
@@ -328,9 +358,13 @@ export default function GameFairValueCard({ game: initialGame }) {
         {/* Footer */}
         <div className="flex items-center justify-between text-xs text-gray-400 border-t-2 border-gray-100 pt-2">
           <span>v{game.model_version}</span>
-          {game.market_source && (
-            <span className="uppercase tracking-wider">market: {game.market_source}</span>
-          )}
+          <div className="flex items-center gap-2">
+            {game.market_source && (
+              <span className="uppercase tracking-wider">
+                25% {game.market_source} blend
+              </span>
+            )}
+          </div>
           {game.computed_at && (
             <span>
               updated {new Date(game.computed_at).toLocaleTimeString('en-US', {

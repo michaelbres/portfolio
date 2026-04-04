@@ -15,6 +15,18 @@ services:
       - key: FRONTEND_URL
         sync: false
 
+  - type: cron
+    name: nightly-calibration
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    schedule: "0 6 * * *"    # 6:00 AM UTC = 1:00 AM ET — after all West Coast games finish
+    startCommand: python data_pipeline/nightly_calibration.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-db
+          property: connectionString
+
   - type: static
     name: portfolio-frontend
     buildCommand: cd frontend && npm ci && npm run build

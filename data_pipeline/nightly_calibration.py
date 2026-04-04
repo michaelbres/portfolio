@@ -248,26 +248,45 @@ def bias_report(db: Session) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def backfill(db: Session, days: int) -> None:
+    """
+    Process the last *days* calendar days of games in chronological order.
+    Useful for seeding the calibration table with historical data on first run.
+    """
+    today = date.today()
+    total = 0
+    for delta in range(days, 0, -1):
+        target = today - timedelta(days=delta)
+        log.info("Backfilling %s …", target)
+        total += process_date(db, target)
+    log.info("Backfill complete: %d rows written across %d days.", total, days)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nightly fair-value calibration")
     parser.add_argument("--date", help="Target date YYYY-MM-DD (default: yesterday)")
     parser.add_argument("--refit", action="store_true",
-                        help="Force re-fit of Platt coefficients")
+                        help="Force re-fit of Platt coefficients even if no new data")
+    parser.add_argument("--backfill", type=int, metavar="N",
+                        help="Process the last N days of games (seeds calibration table)")
     args = parser.parse_args()
-
-    target = (
-        date.fromisoformat(args.date)
-        if args.date else
-        date.today() - timedelta(days=1)
-    )
 
     db = SessionLocal()
     try:
-        written = process_date(db, target)
-
-        if written > 0 or args.refit:
+        if args.backfill:
+            backfill(db, args.backfill)
             refit_platt(db)
             bias_report(db)
+        else:
+            target = (
+                date.fromisoformat(args.date)
+                if args.date else
+                date.today() - timedelta(days=1)
+            )
+            written = process_date(db, target)
+            if written > 0 or args.refit:
+                refit_platt(db)
+                bias_report(db)
 
         stats = rolling_delta_stats(db)
         log.info(
