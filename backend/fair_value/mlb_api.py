@@ -155,6 +155,65 @@ def get_boxscore_lineups(game_pk: int) -> dict[str, list[dict]]:
     return result
 
 
+# ── Current-season pitching stats (for low-Statcast-data fallback) ────────────
+
+def _parse_ip(ip_str) -> float:
+    """
+    Parse MLB Stats API innings-pitched string to a float.
+    "34.2" means 34 full innings + 2 outs = 34 + 2/3 = 34.667 — the decimal
+    is OUTS (0, 1, or 2), not tenths.
+    """
+    try:
+        parts = str(ip_str).split(".")
+        full = int(parts[0])
+        outs = int(parts[1]) if len(parts) > 1 else 0
+        return float(full) + outs / 3.0
+    except (ValueError, IndexError):
+        return 0.0
+
+
+def get_pitcher_season_stats(player_id: int, season: int) -> Optional[dict]:
+    """
+    Fetch current-season pitching stats for *player_id* from the MLB Stats API.
+
+    Returns a dict with the raw counting stats needed for xFIP:
+        ip, k, bb, hbp, hr, fb (fly balls = airOuts + hr)
+
+    Returns None if the player has no pitching stats this season or on error.
+    Intended as a fallback for pitchers with thin Statcast history (injury,
+    rookie, etc.) so xFIP regression uses real current-season data instead
+    of purely regressing to league average.
+    """
+    try:
+        data = _get(f"/api/v1/people/{player_id}/stats", {
+            "stats": "season",
+            "season": season,
+            "group": "pitching",
+        })
+        splits = (data.get("stats") or [{}])[0].get("splits", [])
+        if not splits:
+            return None
+        s = splits[0].get("stat", {})
+
+        ip  = _parse_ip(s.get("inningsPitched", "0"))
+        if ip < 1.0:
+            return None
+
+        k   = int(s.get("strikeOuts",   0))
+        bb  = int(s.get("baseOnBalls",  0))
+        hbp = int(s.get("hitByPitch",   0))
+        hr  = int(s.get("homeRuns",     0))
+        # airOuts = fly balls caught (outs); add HR for total fly balls
+        air = int(s.get("airOuts",      0))
+        fb  = air + hr
+
+        return {"ip": ip, "k": k, "bb": bb, "hbp": hbp, "hr": hr, "fb": fb}
+
+    except Exception as exc:
+        log.debug("get_pitcher_season_stats(%s, %s): %s", player_id, season, exc)
+        return None
+
+
 # ── Kalshi market lines (free, no auth required) ──────────────────────────────
 
 KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"

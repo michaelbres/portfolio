@@ -129,14 +129,42 @@ function PitchInput({ gamePk, side, defaultLimit, isManual, onUpdate }) {
 
 // ── SP row ────────────────────────────────────────────────────────────────────
 
+// Data confidence: pa_season proxy for how much Statcast history we have.
+// < 100 PA ≈ < 23 IP  → heavy regression, flag as thin
+// 100-299 PA          → partial, flag as limited
+// 300+ PA             → good sample
+function dataConfidence(paSeason) {
+  if (paSeason == null || paSeason === 0) return 'none'
+  if (paSeason < 100)  return 'thin'
+  if (paSeason < 300)  return 'limited'
+  return 'good'
+}
+
 function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
                  xfipBlended, wobaBlended, paSeason, paRecent, gamePk, side, onUpdate }) {
-  const xfip = fmtXfip(xfipBlended)
+  const xfip  = fmtXfip(xfipBlended)
+  const conf  = dataConfidence(paSeason)
+
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-baseline gap-2">
         <span className="text-xs uppercase tracking-wider text-gray-500 w-12 shrink-0">{label}</span>
         <span className="font-bold text-sm truncate">{name || 'TBD'}</span>
+        {conf === 'none' && (
+          <span className="text-xs px-1.5 py-0.5 bg-red-100 border border-red-400 text-red-700 font-bold">
+            NO DATA
+          </span>
+        )}
+        {conf === 'thin' && (
+          <span className="text-xs px-1.5 py-0.5 bg-orange-100 border border-orange-400 text-orange-700">
+            thin sample
+          </span>
+        )}
+        {conf === 'limited' && (
+          <span className="text-xs px-1.5 py-0.5 bg-yellow-100 border border-yellow-400 text-yellow-700">
+            limited
+          </span>
+        )}
         {hand && (
           <span className="text-xs text-gray-500 ml-auto shrink-0">{hand}HP</span>
         )}
@@ -159,16 +187,16 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
         {xfip != null ? (
           <div className="text-xs text-gray-600">
             <span className="text-gray-400">xFIP:</span>{' '}
-            <span className="font-mono font-bold">{xfip}</span>
-            <span className="text-gray-400 ml-1">(wOBA {fmtWoba(wobaBlended)})</span>
+            <span className={`font-mono font-bold ${
+              conf !== 'good' ? 'text-orange-600' : ''
+            }`}>{xfip}</span>
+            <span className="text-gray-400 ml-1">({paSeason ?? 0} PA)</span>
           </div>
         ) : (
           <div className="text-xs text-gray-600">
             <span className="text-gray-400">wOBA:</span>{' '}
             <span className="font-mono">{fmtWoba(wobaBlended)}</span>
-            <span className="text-gray-400 ml-1">
-              ({paSeason ?? 0}PA full / {paRecent ?? 0} rec)
-            </span>
+            <span className="text-gray-400 ml-1">({paSeason ?? 0} PA)</span>
           </div>
         )}
       </div>

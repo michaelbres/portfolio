@@ -97,6 +97,16 @@ def _blend_xfip(full_xfip: Optional[float], full_ip: float,
 
 # ── xFIP computation ──────────────────────────────────────────────────────────
 
+def _xfip_from_api_stats(stats: dict) -> Optional[float]:
+    """Compute xFIP from MLB Stats API season counting stats."""
+    ip = stats.get("ip", 0)
+    if ip < 1.0:
+        return None
+    k, bb, hbp, fb = stats["k"], stats["bb"], stats["hbp"], stats["fb"]
+    raw = ((13.0 * fb * LG_HR_PER_FB) + (3.0 * (bb + hbp)) - (2.0 * k)) / ip + CFIP
+    return max(1.50, min(8.00, round(raw, 3)))
+
+
 def _compute_xfip(db: Session, pitcher_id: int,
                   game_pks: list[int]) -> dict:
     """
@@ -255,6 +265,31 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
     xfip_recent = xfip_recent_d["xfip"]
     ip_full     = xfip_full_d["ip"]
     ip_recent   = xfip_recent_d["ip"]
+
+    # ── MLB API supplement when Statcast IP is thin ───────────────────────────
+    # Covers pitchers returning from injury (e.g. Glasnow) and rookies who
+    # have real current-season K/BB/FB data but not enough Statcast history
+    # to avoid heavy regression toward league average.
+    if ip_full < MIN_IP_PITCHER_FULL:
+        try:
+            from .mlb_api import get_pitcher_season_stats
+            api_s = get_pitcher_season_stats(pitcher_id,
+                                              __import__("datetime").date.today().year)
+            if api_s and api_s["ip"] >= 5.0:
+                xfip_api = _xfip_from_api_stats(api_s)
+                if xfip_api is not None:
+                    sc_ip  = ip_full or 0.0
+                    api_ip = api_s["ip"]
+                    if sc_ip > 0 and xfip_full is not None:
+                        # Pool Statcast + API weighted by innings
+                        xfip_full  = (sc_ip * xfip_full + api_ip * xfip_api) / (sc_ip + api_ip)
+                    else:
+                        xfip_full  = xfip_api
+                    ip_full = sc_ip + api_ip   # combined evidence
+                    log.debug("pitcher %s: Statcast %.0fIP + API %.0fIP → xFIP %.2f",
+                              pitcher_id, sc_ip, api_ip, xfip_full)
+        except Exception as exc:
+            log.debug("API supplement failed for pitcher %s: %s", pitcher_id, exc)
 
     return {
         "woba_full":          full_woba,
