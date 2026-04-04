@@ -45,8 +45,9 @@ from .constants import (
     MIN_IP_PITCHER_RECENT,
     MIN_PA_BATTER_FULL,
     MIN_PA_BATTER_RECENT,
-    FATIGUE_YESTERDAY,
-    FATIGUE_TWO_DAYS_AGO,
+    FATIGUE_PER_PITCH_24H,
+    FATIGUE_PER_PITCH_48H,
+    FATIGUE_PER_PITCH_72H,
     CFIP,
     LG_HR_PER_FB,
     LEAGUE_AVG_XFIP,
@@ -536,50 +537,75 @@ def team_bullpen_stats(db: Session, team: str, game_date: date) -> dict:
     if not bp_rows:
         return {"woba_raw": LEAGUE_AVG_WOBA, "woba_fatigued": LEAGUE_AVG_WOBA}
 
-    # Check fatigue for each reliever
-    fatigued_yesterday: set[int] = set()
-    fatigued_two_ago:   set[int] = set()
+    three_ago = game_date - timedelta(days=3)
 
-    for bp in bp_rows:
-        recent = db.execute(text("""
-            SELECT DISTINCT game_date
-            FROM statcast_pitches
-            WHERE pitcher   = :pid
-              AND game_date IN (:y, :t)
-        """), {"pid": bp.pitcher, "y": yesterday, "t": two_ago}).fetchall()
-
-        appeared = {r.game_date for r in recent}
-        if yesterday in appeared:
-            fatigued_yesterday.add(bp.pitcher)
-        elif two_ago in appeared:
-            fatigued_two_ago.add(bp.pitcher)
-
-    # Per-reliever blended wOBA (using their own cross-season last-40-start data)
+    # Per-reliever: blended wOBA quality + 72-hour pitch count for fatigue
     reliever_stats = []
+    total_72h_pitches = 0
+
     for bp in bp_rows:
         s = pitcher_stats(db, bp.pitcher)
+
+        # Actual pitch counts in each of the prior 3 days
+        pc_row = db.execute(text("""
+            SELECT
+                SUM(CASE WHEN game_date = :y  THEN pitch_count ELSE 0 END) AS pc_24h,
+                SUM(CASE WHEN game_date = :t  THEN pitch_count ELSE 0 END) AS pc_48h,
+                SUM(CASE WHEN game_date = :th THEN pitch_count ELSE 0 END) AS pc_72h
+            FROM (
+                SELECT game_date, COUNT(*) AS pitch_count
+                FROM statcast_pitches
+                WHERE pitcher   = :pid
+                  AND game_date IN (:y, :t, :th)
+                GROUP BY game_date
+            ) sub
+        """), {
+            "pid": bp.pitcher,
+            "y":   yesterday,
+            "t":   two_ago,
+            "th":  three_ago,
+        }).fetchone()
+
+        pc_24h = int(pc_row.pc_24h or 0)
+        pc_48h = int(pc_row.pc_48h or 0)
+        pc_72h = int(pc_row.pc_72h or 0)
+
+        # Continuous fatigue wOBA penalty:
+        #   24h: 0.0012 per pitch  (e.g. 30 pitches → +0.036)
+        #   48h: 0.0006 per pitch
+        #   72h: 0.0003 per pitch
+        fatigue_pen = (
+            pc_24h * FATIGUE_PER_PITCH_24H
+            + pc_48h * FATIGUE_PER_PITCH_48H
+            + pc_72h * FATIGUE_PER_PITCH_72H
+        )
+        total_72h_pitches += pc_24h + pc_48h + pc_72h
+
         reliever_stats.append({
-            "pitcher_id":   bp.pitcher,
-            "usage_weight": float(bp.total_pitches or 1),
-            "woba_blended": s["woba_blended"],
+            "pitcher_id":    bp.pitcher,
+            "usage_weight":  float(bp.total_pitches or 1),
+            "woba_blended":  s["woba_blended"],
+            "fatigue_pen":   fatigue_pen,
+            "pc_24h":        pc_24h,
+            "pc_48h":        pc_48h,
+            "pc_72h":        pc_72h,
         })
 
     total_weight = sum(r["usage_weight"] for r in reliever_stats) or 1.0
-    woba_raw = sum(r["woba_blended"] * r["usage_weight"]
-                   for r in reliever_stats) / total_weight
+    woba_raw     = sum(r["woba_blended"] * r["usage_weight"]
+                       for r in reliever_stats) / total_weight
 
-    n = len(reliever_stats)
-    fatigue_delta = (
-        len(fatigued_yesterday) / n * FATIGUE_YESTERDAY
-        + len(fatigued_two_ago)  / n * FATIGUE_TWO_DAYS_AGO
-    )
+    # Fatigued wOBA: usage-weighted sum of (blended + penalty)
+    woba_fatigued = sum(
+        (r["woba_blended"] + r["fatigue_pen"]) * r["usage_weight"]
+        for r in reliever_stats
+    ) / total_weight
 
     return {
         "woba_raw":              round(woba_raw, 4),
-        "woba_fatigued":         round(min(woba_raw + fatigue_delta, 0.420), 4),
-        "fatigued_yesterday":    len(fatigued_yesterday),
-        "fatigued_two_days_ago": len(fatigued_two_ago),
-        "n_relievers":           n,
+        "woba_fatigued":         round(min(woba_fatigued, 0.420), 4),
+        "total_72h_pitches":     total_72h_pitches,
+        "n_relievers":           len(reliever_stats),
     }
 
 

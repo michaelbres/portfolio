@@ -36,6 +36,8 @@ from .mlb_api import (
     get_pitcher_hand,
     get_kalshi_mlb_lines,
 )
+from .weather import weather_carry_factor
+from .calibration import calibrated_prob
 from .stats_engine import (
     pitcher_stats,
     team_bullpen_stats,
@@ -54,7 +56,7 @@ from .win_probability import (
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "2.0"
+MODEL_VERSION = "2.1"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -251,11 +253,15 @@ def _process_game(db: Session, game: dict,
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
 
-    # Team defense, HFA, and umpire factors
+    # Team defense, HFA, umpire factors
     home_def = team_defense_factor(db, home_team, game["game_date"])
     away_def = team_defense_factor(db, away_team, game["game_date"])
     hfa      = team_hfa_factor(db, home_team)
     umpire   = umpire_run_factor(db, game.get("umpire"))
+
+    # Weather carry factor (temperature + wind, on top of static park factor)
+    w_carry  = weather_carry_factor(home_team, game.get("game_time_utc"))
+    eff_pf   = round(pf * w_carry, 4)
 
     fv = compute_game_fair_value(
         home_lineup_woba=     home_lineup_woba,
@@ -268,12 +274,15 @@ def _process_game(db: Session, game: dict,
         away_pitch_limit=     away_pitch_limit,
         home_pitches_per_inn= home_sp_s["pitches_per_inning"],
         away_pitches_per_inn= away_sp_s["pitches_per_inning"],
-        park_factor_val=      pf,
+        park_factor_val=      eff_pf,
         home_defense_factor=  home_def,
         away_defense_factor=  away_def,
         home_hfa_factor=      hfa,
         umpire_factor=        umpire,
     )
+
+    # Market implied probability (no-vig) for Bayesian blend
+    market_home_prob: float | None = None
 
     # ── Market lines (Kalshi) ─────────────────────────────────────────────────
     home_market_odds = None
@@ -282,14 +291,28 @@ def _process_game(db: Session, game: dict,
 
     for line in kalshi_lines:
         ht = line.get("home_team", "").upper()
-        at = line.get("away_team", "").upper()
         if home_team in ht or ht in home_team:
             if line.get("home_yes_price"):
                 from .win_probability import prob_to_american
                 home_market_odds = prob_to_american(line["home_yes_price"])
                 away_market_odds = prob_to_american(line["away_yes_price"])
                 market_source    = "kalshi"
+                market_home_prob = float(line["home_yes_price"])
             break
+
+    # ── Apply Platt scaling + Bayesian market blend ───────────────────────────
+    raw_home_wp = fv["home_win_prob"]
+    final_home_wp = calibrated_prob(
+        raw_prob=     raw_home_wp,
+        market_prob=  market_home_prob,
+    )
+    final_away_wp = 1.0 - final_home_wp
+
+    from .win_probability import prob_to_american
+    fv["home_win_prob"]  = round(final_home_wp, 4)
+    fv["away_win_prob"]  = round(final_away_wp, 4)
+    fv["home_fair_odds"] = prob_to_american(final_home_wp)
+    fv["away_fair_odds"] = prob_to_american(final_away_wp)
 
     # ── Persist ───────────────────────────────────────────────────────────────
     if existing:
@@ -342,7 +365,7 @@ def _process_game(db: Session, game: dict,
     row.home_lineup_source = home_src
     row.away_lineup_source = away_src
 
-    row.park_factor    = pf
+    row.park_factor    = eff_pf
     row.home_lambda    = fv["home_lambda"]
     row.away_lambda    = fv["away_lambda"]
     row.home_win_prob  = fv["home_win_prob"]
