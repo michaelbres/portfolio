@@ -236,3 +236,53 @@ class FairValueLineupSlot(Base):
         UniqueConstraint("game_pk", "team", "batting_order",
                          name="uq_lineup_slot"),
     )
+
+
+class FairValueCalibration(Base):
+    """
+    Post-game calibration record linking model output to closing line and outcome.
+    One row per game; populated by the nightly_calibration.py script.
+
+    Used for:
+      - Calibration audit (systematic bias detection)
+      - Platt scaling coefficient fitting
+      - Rolling delta monitoring / auto-reweight triggers
+    """
+    __tablename__ = "fair_value_calibration"
+
+    id = Column(Integer, primary_key=True)
+    game_pk = Column(BigInteger, unique=True, index=True, nullable=False)
+    game_date = Column(Date, index=True)
+    home_team = Column(String(10))
+    away_team = Column(String(10))
+
+    # Morning model output (raw, pre-Platt / pre-blend)
+    model_home_prob = Column(Float)
+    model_away_prob = Column(Float)
+
+    # Closing line (no-vig, from Kalshi or other sharp source)
+    closing_home_prob = Column(Float)
+    closing_away_prob = Column(Float)
+    closing_source = Column(String(50))
+
+    # Delta: positive = model overrates home team vs market
+    prob_delta = Column(Float)          # model_home_prob - closing_home_prob
+    abs_delta = Column(Float)           # |prob_delta|
+
+    # Game outcome (-1 = unknown, 0 = away win, 1 = home win)
+    outcome_home_win = Column(Integer, default=-1)
+
+    # Brier score contributions for model vs market
+    model_brier = Column(Float)         # (model_home_prob - outcome)²
+    market_brier = Column(Float)        # (closing_home_prob - outcome)²
+
+    # Additional feature context for bias grouping
+    home_sp_xfip = Column(Float)
+    away_sp_xfip = Column(Float)
+    home_lineup_woba = Column(Float)
+    away_lineup_woba = Column(Float)
+    weather_carry_factor = Column(Float)
+    total_lambda = Column(Float)        # home_lambda + away_lambda (game total proxy)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

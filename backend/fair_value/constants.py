@@ -78,9 +78,16 @@ MAX_RUNS = 28
 PA_WEIGHTS = [0.1195, 0.1148, 0.1122, 0.1088, 0.1055, 0.1021, 0.0988, 0.0954, 0.0922]
 # position index:  1       2       3       4       5       6       7       8       9
 
-# Bullpen fatigue wOBA penalties (added to raw BP wOBA allowed)
-# Applied per pitcher who appeared recently; averaged across BP.
-FATIGUE_YESTERDAY = 0.018       # ~1 ERA equivalent degradation
+# Bullpen fatigue — continuous 72-hour pitch count model
+# wOBA penalty per pitch thrown in each prior day window.
+# A reliever who threw 30 pitches yesterday gets +0.036 wOBA allowed penalty.
+# Halves each day: 24h → 48h → 72h reflecting recovery.
+FATIGUE_PER_PITCH_24H = 0.0012
+FATIGUE_PER_PITCH_48H = 0.0006
+FATIGUE_PER_PITCH_72H = 0.0003
+
+# Legacy binary constants (kept for backward compat; no longer used in pipeline)
+FATIGUE_YESTERDAY    = 0.018
 FATIGUE_TWO_DAYS_AGO = 0.008
 
 # Park run factors  (multiply expected runs by this value when game is at that park)
