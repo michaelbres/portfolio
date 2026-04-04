@@ -361,7 +361,7 @@ export default function GameFairValueCard({ game: initialGame }) {
           <div className="flex items-center gap-2">
             {game.market_source && (
               <span className="uppercase tracking-wider">
-                25% {game.market_source} blend
+                vs {game.market_source}
               </span>
             )}
           </div>

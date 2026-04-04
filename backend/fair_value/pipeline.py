@@ -304,12 +304,9 @@ def _process_game(db: Session, game: dict,
                 market_source    = "kalshi"
             break
 
-    # ── Apply Platt scaling + Bayesian market blend ───────────────────────────
-    raw_home_wp = fv["home_win_prob"]
-    final_home_wp = calibrated_prob(
-        raw_prob=     raw_home_wp,
-        market_prob=  market_home_prob,
-    )
+    # ── Apply Platt scaling (no market blend — market is comparison only) ─────
+    raw_home_wp   = fv["home_win_prob"]
+    final_home_wp = calibrated_prob(raw_prob=raw_home_wp)
     final_away_wp = 1.0 - final_home_wp
 
     from .win_probability import prob_to_american
