@@ -292,12 +292,16 @@ def _process_game(db: Session, game: dict,
     for line in kalshi_lines:
         ht = line.get("home_team", "").upper()
         if home_team in ht or ht in home_team:
-            if line.get("home_yes_price"):
+            hp = line.get("home_yes_price")
+            ap = line.get("away_yes_price")
+            if hp and ap:
                 from .win_probability import prob_to_american
-                home_market_odds = prob_to_american(line["home_yes_price"])
-                away_market_odds = prob_to_american(line["away_yes_price"])
+                # Strip Kalshi's implicit vig so both sides sum to 1.0
+                total = float(hp) + float(ap)
+                market_home_prob = float(hp) / total
+                home_market_odds = prob_to_american(market_home_prob)
+                away_market_odds = prob_to_american(1.0 - market_home_prob)
                 market_source    = "kalshi"
-                market_home_prob = float(line["home_yes_price"])
             break
 
     # ── Apply Platt scaling + Bayesian market blend ───────────────────────────
