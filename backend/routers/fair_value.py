@@ -11,7 +11,9 @@ POST /api/fair-value/run                 ?date=YYYY-MM-DD  (trigger pipeline)
 """
 
 import logging
-from datetime import date, datetime
+import sys
+import os
+from datetime import date, datetime, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -190,4 +192,152 @@ def trigger_pipeline(
         "games_computed": outcome["games_computed"],
         "error":          outcome.get("error"),
         "results":        outcome["games"],
+    }
+
+
+# ── POST /admin/backfill ──────────────────────────────────────────────────────
+
+@router.post("/admin/backfill")
+def backfill_calibration(
+    days: int = Query(60, ge=1, le=365, description="Number of past days to backfill"),
+    db: Session = Depends(get_db),
+):
+    """
+    Seed the fair_value_calibration table from existing fair_value_games rows.
+    Processes the last `days` days and re-fits Platt scaling coefficients.
+    Safe to call multiple times (upserts).
+    """
+    # Import calibration helpers — they live in data_pipeline/ relative to project root,
+    # but the logic is duplicated inline here to avoid path hacks in production.
+    from sqlalchemy import text
+    from models import FairValueCalibration
+    from fair_value.calibration import fit_platt, load_coeffs, save_coeffs
+    from fair_value.win_probability import american_to_prob
+
+    today = date.today()
+    total_written = 0
+    dates_processed = []
+
+    for offset in range(days, 0, -1):
+        target = today - timedelta(days=offset)
+
+        games = db.query(FairValueGame).filter(
+            FairValueGame.game_date == target
+        ).all()
+        if not games:
+            continue
+
+        # Get outcomes from Statcast
+        rows = db.execute(text("""
+            SELECT game_pk,
+                   MAX(post_home_score) AS final_home,
+                   MAX(post_away_score) AS final_away
+            FROM statcast_pitches
+            WHERE game_date = :gd
+              AND inning >= 9
+            GROUP BY game_pk
+        """), {"gd": target}).fetchall()
+
+        outcomes = {}
+        for r in rows:
+            if r.final_home is None or r.final_away is None:
+                continue
+            if r.final_home == r.final_away:
+                continue
+            outcomes[int(r.game_pk)] = 1 if r.final_home > r.final_away else 0
+
+        if not outcomes:
+            continue
+
+        written = 0
+        for game in games:
+            outcome = outcomes.get(game.game_pk)
+            if outcome is None or game.home_win_prob is None:
+                continue
+
+            closing_home_prob = None
+            if game.home_market_odds is not None and game.away_market_odds is not None:
+                h = american_to_prob(game.home_market_odds)
+                a = american_to_prob(game.away_market_odds)
+                total = h + a
+                closing_home_prob = h / total if total > 0 else None
+
+            delta = None
+            if closing_home_prob is not None:
+                delta = round(game.home_win_prob - closing_home_prob, 4)
+
+            model_brier  = round((game.home_win_prob - outcome) ** 2, 6)
+            market_brier = (
+                round((closing_home_prob - outcome) ** 2, 6)
+                if closing_home_prob is not None else None
+            )
+
+            existing = db.query(FairValueCalibration).filter(
+                FairValueCalibration.game_pk == game.game_pk
+            ).first()
+
+            if existing is None:
+                cal = FairValueCalibration(game_pk=game.game_pk)
+                db.add(cal)
+            else:
+                cal = existing
+
+            cal.game_date         = game.game_date
+            cal.home_team         = game.home_team
+            cal.away_team         = game.away_team
+            cal.model_home_prob   = game.home_win_prob
+            cal.model_away_prob   = game.away_win_prob
+            cal.closing_home_prob = closing_home_prob
+            cal.closing_away_prob = (1.0 - closing_home_prob) if closing_home_prob else None
+            cal.closing_source    = game.market_source
+            cal.prob_delta        = delta
+            cal.abs_delta         = abs(delta) if delta is not None else None
+            cal.outcome_home_win  = outcome
+            cal.model_brier       = model_brier
+            cal.market_brier      = market_brier
+            cal.home_lineup_woba  = game.home_lineup_woba
+            cal.away_lineup_woba  = game.away_lineup_woba
+            cal.total_lambda      = (game.home_lambda or 0) + (game.away_lambda or 0)
+
+            written += 1
+
+        db.commit()
+        if written:
+            dates_processed.append({"date": target.isoformat(), "rows": written})
+            total_written += written
+
+    # Re-fit Platt coefficients if we have enough data
+    platt_updated = False
+    platt_n = 0
+    cal_rows = db.execute(text("""
+        SELECT model_home_prob, outcome_home_win
+        FROM fair_value_calibration
+        WHERE outcome_home_win IN (0, 1) AND model_home_prob IS NOT NULL
+        ORDER BY game_date
+    """)).fetchall()
+
+    if len(cal_rows) >= 30:
+        raw_probs = [float(r.model_home_prob) for r in cal_rows]
+        outcomes_list = [int(r.outcome_home_win) for r in cal_rows]
+        A, B = fit_platt(raw_probs, outcomes_list)
+        coeffs = load_coeffs()
+        coeffs["platt_A"] = A
+        coeffs["platt_B"] = B
+        coeffs["n_games"] = len(raw_probs)
+        coeffs["last_updated"] = str(today)
+        save_coeffs(coeffs)
+        platt_updated = True
+        platt_n = len(raw_probs)
+
+    return {
+        "total_rows_written": total_written,
+        "dates_processed": dates_processed,
+        "platt_refit": platt_updated,
+        "platt_n_games": platt_n,
+        "message": (
+            f"Backfill complete. {total_written} rows upserted across "
+            f"{len(dates_processed)} dates. "
+            + (f"Platt re-fit on {platt_n} games." if platt_updated
+               else f"Platt NOT re-fit (need ≥30 rows, have {len(cal_rows)}).")
+        ),
     }
