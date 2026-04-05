@@ -216,7 +216,7 @@ def get_pitcher_season_stats(player_id: int, season: int) -> Optional[dict]:
 
 # ── Kalshi market lines (free, no auth required) ──────────────────────────────
 
-KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
+KALSHI_BASE = "https://trading-api.kalshi.com/trade-api/v2"
 
 
 def get_kalshi_mlb_lines(game_date: date) -> list[dict]:

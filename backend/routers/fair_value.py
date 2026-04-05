@@ -195,6 +195,32 @@ def trigger_pipeline(
     }
 
 
+# ── GET /debug/kalshi ─────────────────────────────────────────────────────────
+
+@router.get("/debug/kalshi")
+def debug_kalshi(
+    game_date: Optional[str] = Query(None, description="YYYY-MM-DD; defaults to today"),
+):
+    """Return raw Kalshi API response for debugging market line fetch."""
+    from fair_value.mlb_api import get_kalshi_mlb_lines, KALSHI_BASE
+    import requests as _requests
+    d = date.fromisoformat(game_date) if game_date else date.today()
+    lines = get_kalshi_mlb_lines(d)
+
+    # Also return raw response for inspection
+    try:
+        resp = _requests.get(
+            f"{KALSHI_BASE}/events",
+            params={"status": "open", "series_ticker": "MLBM", "limit": 100},
+            timeout=10,
+        )
+        raw = {"status_code": resp.status_code, "body": resp.json()}
+    except Exception as e:
+        raw = {"error": str(e)}
+
+    return {"date": d.isoformat(), "parsed_lines": lines, "raw_response": raw}
+
+
 # ── POST /admin/backfill ──────────────────────────────────────────────────────
 
 @router.post("/admin/backfill")
