@@ -27,6 +27,18 @@ services:
           name: portfolio-db
           property: connectionString
 
+  - type: web
+    name: mlb-backtest
+    runtime: python
+    rootDir: backtest
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-db
+          property: connectionString
+
   - type: static
     name: portfolio-frontend
     buildCommand: cd frontend && npm ci && npm run build
