@@ -206,7 +206,7 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
 
 // ── Odds panel ────────────────────────────────────────────────────────────────
 
-function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite }) {
+function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite, isLive }) {
   return (
     <div className={`flex flex-col items-center gap-1 px-4 py-3 border-2 min-w-[100px] ${
       isFavorite ? 'border-sv-red bg-red-50' : 'border-gray-300 bg-gray-50'
@@ -220,8 +220,15 @@ function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite }) 
       <span className="text-xs text-gray-500">{fmtPct(winProb)}</span>
       <span className="text-xs text-gray-400 font-mono">λ {lambda?.toFixed(2)}</span>
       {marketOdds != null && (
-        <div className="flex flex-col items-center gap-0.5 mt-1">
-          <span className="text-xs text-gray-400">mkt {fmtOdds(marketOdds)}</span>
+        <div className="flex flex-col items-center gap-0.5 mt-1 pt-1 border-t border-gray-200 w-full">
+          <div className="flex items-center gap-1">
+            {isLive && (
+              <span className="text-[10px] font-bold bg-green-500 text-white px-1 py-0.5 leading-none">
+                LIVE
+              </span>
+            )}
+            <span className="text-xs text-gray-500 font-mono font-bold">{fmtOdds(marketOdds)}</span>
+          </div>
           <EdgeBadge modelOdds={fairOdds} marketOdds={marketOdds} />
         </div>
       )}
@@ -231,8 +238,13 @@ function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite }) 
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 
-export default function GameFairValueCard({ game: initialGame }) {
+export default function GameFairValueCard({ game: initialGame, liveOdds = null }) {
   const [game, setGame] = useState(initialGame)
+
+  // Use live Kalshi odds when available, fall back to stored market odds
+  const homeMarketOdds = liveOdds?.home_odds ?? game.home_market_odds
+  const awayMarketOdds = liveOdds?.away_odds ?? game.away_market_odds
+  const isLive = liveOdds != null
 
   const gameTime = game.game_time_utc
     ? new Date(game.game_time_utc).toLocaleTimeString('en-US', {
@@ -284,18 +296,20 @@ export default function GameFairValueCard({ game: initialGame }) {
             team={game.away_team}
             winProb={game.away_win_prob}
             fairOdds={game.away_fair_odds}
-            marketOdds={game.away_market_odds}
+            marketOdds={awayMarketOdds}
             lambda={game.away_lambda}
             isFavorite={!homeIsFav}
+            isLive={isLive}
           />
           <span className="font-bangers text-2xl text-gray-300">VS</span>
           <OddsPanel
             team={game.home_team}
             winProb={game.home_win_prob}
             fairOdds={game.home_fair_odds}
-            marketOdds={game.home_market_odds}
+            marketOdds={homeMarketOdds}
             lambda={game.home_lambda}
             isFavorite={homeIsFav}
+            isLive={isLive}
           />
         </div>
 
@@ -387,11 +401,14 @@ export default function GameFairValueCard({ game: initialGame }) {
         <div className="flex items-center justify-between text-xs text-gray-400 border-t-2 border-gray-100 pt-2">
           <span>v{game.model_version}</span>
           <div className="flex items-center gap-2">
-            {game.market_source && (
-              <span className="uppercase tracking-wider">
-                vs {game.market_source}
+            {isLive ? (
+              <span className="flex items-center gap-1">
+                <span className="font-bold bg-green-500 text-white text-[10px] px-1 py-0.5">LIVE</span>
+                <span className="uppercase tracking-wider">kalshi</span>
               </span>
-            )}
+            ) : game.market_source ? (
+              <span className="uppercase tracking-wider">vs {game.market_source}</span>
+            ) : null}
           </div>
           {game.computed_at && (
             <span>

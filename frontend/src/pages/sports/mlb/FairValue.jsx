@@ -31,6 +31,8 @@ function fmtDisplayDate(dateStr) {
 export default function FairValue() {
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()))
   const [games, setGames] = useState([])
+  const [liveOdds, setLiveOdds] = useState({})   // { game_pk: {home_odds, away_odds, ...} }
+  const [liveOddsAt, setLiveOddsAt] = useState(null)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
@@ -50,9 +52,29 @@ export default function FairValue() {
     }
   }, [])
 
+  const fetchLiveOdds = useCallback(async (date) => {
+    try {
+      const { data } = await api.get('/api/fair-value/live-odds', { params: { game_date: date } })
+      if (data.kalshi_available) {
+        const byPk = {}
+        for (const line of data.lines) {
+          byPk[line.game_pk] = line
+        }
+        setLiveOdds(byPk)
+        setLiveOddsAt(new Date())
+      }
+    } catch (e) {
+      // live odds are optional — fail silently
+    }
+  }, [])
+
   useEffect(() => {
     fetchGames(selectedDate)
-  }, [selectedDate, fetchGames])
+    fetchLiveOdds(selectedDate)
+    // Refresh Kalshi odds every 5 minutes
+    const interval = setInterval(() => fetchLiveOdds(selectedDate), 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [selectedDate, fetchGames, fetchLiveOdds])
 
   async function runPipeline(force = false) {
     setRunning(true)
@@ -201,14 +223,28 @@ export default function FairValue() {
           </div>
         ) : (
           <>
-            <div className="mb-3 text-sm text-gray-500">
-              {games.length} game{games.length !== 1 ? 's' : ''} —{' '}
-              {games.filter((g) => g.home_lineup_source === 'confirmed').length} confirmed lineups,{' '}
-              {games.filter((g) => g.market_source).length} with market lines
+            <div className="mb-3 flex items-center justify-between text-sm text-gray-500">
+              <span>
+                {games.length} game{games.length !== 1 ? 's' : ''} —{' '}
+                {games.filter((g) => g.home_lineup_source === 'confirmed').length} confirmed lineups,{' '}
+                {Object.keys(liveOdds).length > 0
+                  ? <><span className="text-green-700 font-medium">{Object.keys(liveOdds).length} live Kalshi lines</span></>
+                  : `${games.filter((g) => g.market_source).length} with market lines`
+                }
+              </span>
+              {liveOddsAt && (
+                <span className="text-xs text-gray-400">
+                  Kalshi updated {liveOddsAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </span>
+              )}
             </div>
             <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
               {games.map((game) => (
-                <GameFairValueCard key={game.game_pk} game={game} />
+                <GameFairValueCard
+                  key={game.game_pk}
+                  game={game}
+                  liveOdds={liveOdds[game.game_pk] ?? null}
+                />
               ))}
             </div>
           </>

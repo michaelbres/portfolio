@@ -221,6 +221,63 @@ def debug_kalshi(
     return {"date": d.isoformat(), "parsed_lines": lines, "raw_response": raw}
 
 
+# ── GET /live-odds ─────────────────────────────────────────────────────────────
+
+@router.get("/live-odds")
+def live_odds(
+    game_date: Optional[str] = Query(None, description="YYYY-MM-DD; defaults to today"),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch current Kalshi moneyline prices and match them to today's games.
+    Returns odds keyed by game_pk so the frontend can overlay them live.
+    """
+    from fair_value.mlb_api import get_kalshi_mlb_lines
+    from fair_value.win_probability import prob_to_american
+
+    d = date.fromisoformat(game_date) if game_date else date.today()
+
+    try:
+        kalshi_lines = get_kalshi_mlb_lines(d)
+    except Exception:
+        kalshi_lines = []
+
+    games = db.query(FairValueGame).filter(FairValueGame.game_date == d).all()
+
+    result = []
+    for game in games:
+        for line in kalshi_lines:
+            ht = line.get("home_team", "").upper()
+            at = line.get("away_team", "").upper()
+            home = game.home_team.upper()
+            away = game.away_team.upper()
+            # fuzzy match: abbreviation contained in full name or vice versa
+            if home in ht or ht in home or away in at or at in away:
+                hp = line.get("home_yes_price")
+                ap = line.get("away_yes_price")
+                if hp and ap:
+                    total = float(hp) + float(ap)
+                    home_prob = float(hp) / total
+                    away_prob = float(ap) / total
+                    result.append({
+                        "game_pk":    game.game_pk,
+                        "home_team":  game.home_team,
+                        "away_team":  game.away_team,
+                        "home_prob":  round(home_prob, 4),
+                        "away_prob":  round(away_prob, 4),
+                        "home_odds":  prob_to_american(home_prob),
+                        "away_odds":  prob_to_american(away_prob),
+                        "source":     "kalshi",
+                    })
+                break
+
+    return {
+        "date":  d.isoformat(),
+        "lines": result,
+        "kalshi_available": len(kalshi_lines) > 0,
+    }
+
+
 # ── POST /admin/backfill ──────────────────────────────────────────────────────
 
 @router.post("/admin/backfill")
