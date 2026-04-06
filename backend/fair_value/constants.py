@@ -90,6 +90,15 @@ FATIGUE_PER_PITCH_72H = 0.0003
 FATIGUE_YESTERDAY    = 0.018
 FATIGUE_TWO_DAYS_AGO = 0.008
 
+# ── Team run factor (top-down anchor) ─────────────────────────────────────────
+# Blends each team's actual RS/G this season into their lambda to prevent
+# bad teams from looking artificially competitive via bottom-up stats alone.
+LEAGUE_AVG_RS_PER_GAME  = 4.51   # matches LEAGUE_AVG_RUNS_PER_GAME
+TEAM_RUN_FACTOR_BLEND   = 0.30   # 30% top-down, 70% bottom-up
+TEAM_RUN_FACTOR_FLOOR   = 0.82   # ~3.7 RS/G team  (very bad)
+TEAM_RUN_FACTOR_CAP     = 1.18   # ~5.3 RS/G team  (very good)
+MIN_GAMES_RUN_FACTOR    = 10     # need at least 10 games before applying
+
 # Park run factors  (multiply expected runs by this value when game is at that park)
 PARK_FACTORS: dict[str, float] = {
     "COL": 1.19,   # Coors Field

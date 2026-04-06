@@ -55,6 +55,10 @@ from .constants import (
     DEFENSE_FACTOR_FLOOR,
     DEFENSE_FACTOR_CAP,
     MIN_BIP_DEFENSE,
+    LEAGUE_AVG_RS_PER_GAME,
+    TEAM_RUN_FACTOR_FLOOR,
+    TEAM_RUN_FACTOR_CAP,
+    MIN_GAMES_RUN_FACTOR,
 )
 
 log = logging.getLogger(__name__)
@@ -767,6 +771,59 @@ def team_hfa_factor(db: Session, team: str) -> float:
 
     except Exception:
         return HOME_LAMBDA_FACTOR
+
+
+# ── Team run factor (top-down anchor) ────────────────────────────────────────
+
+def team_run_factor(db: Session, team: str, game_date: date, season: int) -> float:
+    """
+    Returns a multiplicative factor based on the team's actual RS/G this season
+    relative to the league average.
+
+    factor = (team_RS_per_game / LEAGUE_AVG_RS_PER_GAME), regressed toward 1.0
+    by sample size (full confidence at 81 games).
+
+    Applied in compute_lambda() as a 30% blend (TEAM_RUN_FACTOR_BLEND) so the
+    bottom-up model retains 70% weight but bad teams can't look artificially
+    competitive through noisy individual Statcast numbers.
+
+    Returns 1.0 when fewer than MIN_GAMES_RUN_FACTOR games have been played.
+    """
+    season_start = date(season, 3, 1)
+    try:
+        row = db.execute(text("""
+            SELECT
+                COUNT(DISTINCT game_pk)                                     AS games,
+                SUM(CASE WHEN home_team = :team THEN final_home
+                         ELSE final_away END)                               AS runs_scored
+            FROM (
+                SELECT game_pk, home_team, away_team,
+                       MAX(post_home_score) AS final_home,
+                       MAX(post_away_score) AS final_away
+                FROM statcast_pitches
+                WHERE (home_team = :team OR away_team = :team)
+                  AND game_date >= :season_start
+                  AND game_date  < :gd
+                  AND inning    >= 9
+                GROUP BY game_pk, home_team, away_team
+            ) t
+        """), {"team": team, "season_start": season_start, "gd": game_date}).fetchone()
+
+        games = int(row.games or 0)
+        if games < MIN_GAMES_RUN_FACTOR:
+            return 1.0
+
+        rs_per_game = float(row.runs_scored or 0) / games
+        raw_factor  = rs_per_game / LEAGUE_AVG_RS_PER_GAME
+
+        # Regress toward 1.0 based on sample (full confidence at 81 games)
+        weight = min(games, 81) / 81.0
+        factor = raw_factor * weight + 1.0 * (1.0 - weight)
+
+        return max(TEAM_RUN_FACTOR_FLOOR, min(TEAM_RUN_FACTOR_CAP, round(factor, 4)))
+
+    except Exception:
+        return 1.0
 
 
 # ── Umpire run factor ─────────────────────────────────────────────────────────

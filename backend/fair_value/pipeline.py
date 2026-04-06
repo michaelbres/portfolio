@@ -46,6 +46,7 @@ from .stats_engine import (
     batter_stats,
     team_defense_factor,
     team_hfa_factor,
+    team_run_factor,
     umpire_run_factor,
 )
 # stats_engine functions are all cross-season now; no season arg needed
@@ -253,11 +254,13 @@ def _process_game(db: Session, game: dict,
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
 
-    # Team defense, HFA, umpire factors
+    # Team defense, HFA, umpire, run factors
     home_def = team_defense_factor(db, home_team, game["game_date"])
     away_def = team_defense_factor(db, away_team, game["game_date"])
     hfa      = team_hfa_factor(db, home_team)
     umpire   = umpire_run_factor(db, game.get("umpire"))
+    home_rf  = team_run_factor(db, home_team, game["game_date"], season)
+    away_rf  = team_run_factor(db, away_team, game["game_date"], season)
 
     # Weather carry factor (temperature + wind, on top of static park factor)
     w_carry  = weather_carry_factor(home_team, game.get("game_time_utc"))
@@ -279,6 +282,8 @@ def _process_game(db: Session, game: dict,
         away_defense_factor=  away_def,
         home_hfa_factor=      hfa,
         umpire_factor=        umpire,
+        home_run_factor=      home_rf,
+        away_run_factor=      away_rf,
     )
 
     # Market implied probability (no-vig) for Bayesian blend
@@ -443,11 +448,13 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
     home_sp_s = pitcher_stats(db, row.home_sp_id) if row.home_sp_id else _sp_default
     away_sp_s = pitcher_stats(db, row.away_sp_id) if row.away_sp_id else _sp_default
 
-    pf       = park_factor(row.home_team)
+    pf        = park_factor(row.home_team)
     game_date = row.game_date
     home_def  = team_defense_factor(db, row.home_team, game_date)
     away_def  = team_defense_factor(db, row.away_team, game_date)
     hfa       = team_hfa_factor(db, row.home_team)
+    home_rf   = team_run_factor(db, row.home_team, game_date, season)
+    away_rf   = team_run_factor(db, row.away_team, game_date, season)
 
     fv = compute_game_fair_value(
         home_lineup_woba=     row.home_lineup_woba or LEAGUE_AVG_WOBA,
@@ -464,6 +471,8 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
         home_defense_factor=  home_def,
         away_defense_factor=  away_def,
         home_hfa_factor=      hfa,
+        home_run_factor=      home_rf,
+        away_run_factor=      away_rf,
     )
 
     row.home_sp_proj_innings = fv["home_sp_proj_innings"]

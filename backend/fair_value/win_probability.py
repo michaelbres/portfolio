@@ -39,6 +39,7 @@ from .constants import (
     DEFAULT_PITCH_LIMIT,
     NEGBIN_DISPERSION,
     CALIBRATION_ALPHA,
+    TEAM_RUN_FACTOR_BLEND,
 )
 
 
@@ -94,6 +95,7 @@ def compute_lambda(
     defense_factor:    float = 1.0,
     hfa_factor:        Optional[float] = None,
     umpire_factor:     float = 1.0,
+    team_run_factor:   float = 1.0,
 ) -> float:
     """
     Compute the NegBin μ (expected runs scored) for one team's offense.
@@ -110,6 +112,8 @@ def compute_lambda(
                       Pass the OPPOSING team's factor.  >1 = worse defense.
     hfa_factor        Home-team-specific λ multiplier.  None → global default.
     umpire_factor     Umpire zone tightness multiplier (default 1.0).
+    team_run_factor   Season RS/G relative to league avg (1.0 = neutral).
+                      Blended at TEAM_RUN_FACTOR_BLEND (30%) as a top-down anchor.
     """
     sp_innings = max(0.0, min(sp_innings, 9.0))
     bp_innings = max(0.0, 9.0 - sp_innings)
@@ -136,6 +140,11 @@ def compute_lambda(
         lam *= hfa_factor
     else:
         lam /= hfa_factor
+
+    # Top-down anchor: blend 30% of team's actual RS/G factor
+    # lambda = lambda * (1 - blend + blend * factor)
+    # Bad team (factor=0.80): lambda * 0.94;  Good team (factor=1.20): lambda * 1.06
+    lam *= (1.0 - TEAM_RUN_FACTOR_BLEND + TEAM_RUN_FACTOR_BLEND * team_run_factor)
 
     return max(lam, 0.5)   # floor to avoid degenerate PMF
 
@@ -232,6 +241,8 @@ def compute_game_fair_value(
     home_hfa_factor:      Optional[float] = None,
     umpire_factor:        float = 1.0,
     calibration_alpha:    float = CALIBRATION_ALPHA,
+    home_run_factor:      float = 1.0,
+    away_run_factor:      float = 1.0,
 ) -> dict:
     """
     Top-level function: compute all model outputs for one game.
@@ -239,6 +250,10 @@ def compute_game_fair_value(
     Defense factors:
       home_defense_factor  = HOME team fielding quality (applied to lambda_away)
       away_defense_factor  = AWAY team fielding quality (applied to lambda_home)
+
+    Run factors (top-down anchor):
+      home_run_factor  = home team RS/G / league avg this season
+      away_run_factor  = away team RS/G / league avg this season
 
     Returns a dict with lambda values, win probabilities, and fair odds.
     """
@@ -256,6 +271,7 @@ def compute_game_fair_value(
         defense_factor=  away_defense_factor,
         hfa_factor=      home_hfa_factor,
         umpire_factor=   umpire_factor,
+        team_run_factor= home_run_factor,
     )
 
     # Away offense faces home SP + home BP + home defense
@@ -269,6 +285,7 @@ def compute_game_fair_value(
         defense_factor=  home_defense_factor,
         hfa_factor=      home_hfa_factor,
         umpire_factor=   umpire_factor,
+        team_run_factor= away_run_factor,
     )
 
     home_wp_raw = win_probability(lambda_home, lambda_away)
