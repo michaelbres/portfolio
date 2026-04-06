@@ -6,10 +6,10 @@ function heatColor(val, p10, p90, higherIsBetter = true) {
   if (val == null || p10 == null || p90 == null || p10 === p90) return {}
   const pct = Math.max(0, Math.min(1, (val - p10) / (p90 - p10)))
   const adj = higherIsBetter ? pct : 1 - pct
-  if (adj >= 0.85) return { backgroundColor: '#fee2e2', color: '#7f1d1d', fontWeight: 600 }
-  if (adj >= 0.65) return { backgroundColor: '#fff7ed', color: '#7c2d12' }
-  if (adj <= 0.15) return { backgroundColor: '#dbeafe', color: '#1e3a5f', fontWeight: 600 }
-  if (adj <= 0.35) return { backgroundColor: '#f0f9ff', color: '#0c4a6e' }
+  if (adj >= 0.85) return { backgroundColor: 'rgba(220,38,38,0.25)', color: '#FCA5A5', fontWeight: 600 }
+  if (adj >= 0.65) return { backgroundColor: 'rgba(234,88,12,0.15)', color: '#FDB97D' }
+  if (adj <= 0.15) return { backgroundColor: 'rgba(37,99,235,0.25)', color: '#93C5FD', fontWeight: 600 }
+  if (adj <= 0.35) return { backgroundColor: 'rgba(14,165,233,0.12)', color: '#7DD3FC' }
   return {}
 }
 
@@ -41,32 +41,32 @@ function StrikeZonePlot({ pitches }) {
 
   return (
     <div>
-      <div className="text-xs font-bangers text-gray-500 tracking-wider mb-1 uppercase">Pitch Locations</div>
+      <div className="text-xs text-mist tracking-wider mb-1 uppercase font-medium">Pitch Locations</div>
       <svg viewBox={`0 0 ${SZW} ${SZH}`} width="100%" style={{ maxHeight: 220 }}>
         {/* Outer box */}
         <rect x={SZPAD} y={SZPAD} width={SZW - SZPAD*2} height={SZH - SZPAD*2}
-              fill="none" stroke="#ddd" strokeWidth="1" strokeDasharray="4,4" />
+              fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="1" strokeDasharray="4,4" />
         {/* Strike zone */}
         <rect x={SZ_L} y={szTop} width={SZ_R - SZ_L} height={szBot - szTop}
-              fill="none" stroke="#999" strokeWidth="1.5" />
+              fill="none" stroke="rgba(255,255,255,0.30)" strokeWidth="1.5" />
         {/* Zone grid */}
         {[-0.277, 0.277].map((x) => (
           <line key={x} x1={szScaleX(x)} y1={szTop} x2={szScaleX(x)} y2={szBot}
-                stroke="#ccc" strokeWidth="0.8" />
+                stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
         ))}
         {[bot + (top - bot) / 3, bot + 2 * (top - bot) / 3].map((z) => (
           <line key={z} x1={SZ_L} y1={szScaleZ(z)} x2={SZ_R} y2={szScaleZ(z)}
-                stroke="#ccc" strokeWidth="0.8" />
+                stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
         ))}
         {/* Home plate */}
         <polygon
           points={`${szScaleX(-0.708)},${szScaleZ(0.2)} ${szScaleX(0.708)},${szScaleZ(0.2)} ${szScaleX(0.708)},${szScaleZ(0.05)} ${szScaleX(0)},${szScaleZ(-0.1)} ${szScaleX(-0.708)},${szScaleZ(0.05)}`}
-          fill="#aaa" />
+          fill="rgba(255,255,255,0.25)" />
         {/* Pitches */}
         {pitches.map((p, i) => p.plate_x != null && p.plate_z != null && (
           <circle key={i} cx={szScaleX(p.plate_x)} cy={szScaleZ(p.plate_z)}
-                  r={4.5} fill={pitchColor(p.pitch_type)} fillOpacity={0.8}
-                  stroke="#000" strokeWidth={0.4} />
+                  r={4.5} fill={pitchColor(p.pitch_type)} fillOpacity={0.85}
+                  stroke="rgba(0,0,0,0.5)" strokeWidth={0.6} />
         ))}
       </svg>
     </div>
@@ -83,19 +83,19 @@ function ReleasePointPlot({ pitches }) {
   const valid = pitches.filter((p) => p.release_pos_x != null && p.release_pos_z != null)
   return (
     <div>
-      <div className="text-xs font-bangers text-gray-500 tracking-wider mb-1 uppercase">Release Point</div>
+      <div className="text-xs text-mist tracking-wider mb-1 uppercase font-medium">Release Point</div>
       <svg viewBox={`0 0 ${RPW} ${RPH}`} width="100%" style={{ maxHeight: 200 }}>
         {/* Background */}
         <rect x={RPAD} y={RPAD} width={RPW - RPAD*2} height={RPH - RPAD*2}
-              fill="#f8f9fa" stroke="#e5e7eb" strokeWidth="1" />
+              fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.10)" strokeWidth="1" />
         {/* Center line (rubber) */}
         <line x1={rpScaleX(0)} y1={RPAD} x2={rpScaleX(0)} y2={RPH - RPAD}
-              stroke="#d1d5db" strokeWidth="1" strokeDasharray="3,3" />
+              stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="3,3" />
         {/* Axis labels */}
-        <text x={RPAD} y={RPH - 3} fontSize="8" fill="#9ca3af" fontFamily="monospace">L</text>
-        <text x={RPW - RPAD - 4} y={RPH - 3} fontSize="8" fill="#9ca3af" fontFamily="monospace">R</text>
-        <text x={2} y={RPAD + 6} fontSize="8" fill="#9ca3af" fontFamily="monospace">8ft</text>
-        <text x={2} y={RPH - RPAD + 4} fontSize="8" fill="#9ca3af" fontFamily="monospace">3ft</text>
+        <text x={RPAD} y={RPH - 3} fontSize="8" fill="#86868B" fontFamily="monospace">L</text>
+        <text x={RPW - RPAD - 4} y={RPH - 3} fontSize="8" fill="#86868B" fontFamily="monospace">R</text>
+        <text x={2} y={RPAD + 6} fontSize="8" fill="#86868B" fontFamily="monospace">8ft</text>
+        <text x={2} y={RPH - RPAD + 4} fontSize="8" fill="#86868B" fontFamily="monospace">3ft</text>
         {/* Pitches */}
         {valid.map((p, i) => (
           <circle key={i}
@@ -103,9 +103,9 @@ function ReleasePointPlot({ pitches }) {
             cy={rpScaleZ(p.release_pos_z)}
             r={4.5}
             fill={pitchColor(p.pitch_type)}
-            fillOpacity={0.8}
-            stroke="#000"
-            strokeWidth={0.4}
+            fillOpacity={0.85}
+            stroke="rgba(0,0,0,0.5)"
+            strokeWidth={0.6}
           />
         ))}
       </svg>
@@ -164,36 +164,48 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl w-full overflow-y-auto"
-        style={{ maxWidth: 860, maxHeight: '92vh' }}
+        className="rounded-xl shadow-2xl w-full overflow-y-auto"
+        style={{
+          maxWidth: 860,
+          maxHeight: '92vh',
+          background: '#141414',
+          border: '1px solid rgba(255,255,255,0.10)',
+        }}
       >
         {/* Header */}
-        <div className="bg-sv-dark px-5 py-4 flex items-center gap-4 rounded-t-xl sticky top-0 z-10">
+        <div
+          className="px-5 py-4 flex items-center gap-4 rounded-t-xl sticky top-0 z-10"
+          style={{
+            background: '#1C1C1E',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
           <img
             src={photoUrl}
             alt={summary.pitcher_name}
-            className="w-16 h-16 rounded-full object-cover border-2 border-sv-red bg-gray-700 flex-shrink-0"
+            className="w-16 h-16 rounded-full object-cover flex-shrink-0"
+            style={{ border: '2px solid rgba(14,165,233,0.40)', background: '#2C2C2E' }}
             onError={(e) => { e.target.style.display = 'none' }}
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-3 flex-wrap">
-              <h2 className="font-bangers text-white text-2xl tracking-wider leading-none">
+              <h2 className="text-snow text-xl font-semibold tracking-tight leading-none">
                 {summary.pitcher_name}
               </h2>
-              <span className="text-gray-400 text-sm font-sans">{summary.p_throws}HP</span>
-              <span className="text-sv-red font-bangers tracking-wider">{summary.game_date}</span>
-              <span className="text-gray-300 text-sm font-sans">
+              <span className="text-mist text-sm">{summary.p_throws}HP</span>
+              <span className="text-electric text-sm font-medium">{summary.game_date}</span>
+              <span className="text-mist text-sm">
                 {summary.away_team} @ {summary.home_team}
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl font-light leading-none flex-shrink-0 ml-2"
+            className="text-mist hover:text-snow text-2xl font-light leading-none flex-shrink-0 ml-2 transition-colors"
           >
             ×
           </button>
@@ -202,13 +214,16 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
         <div className="p-5 space-y-5">
           {/* Pitching line */}
           <div>
-            <div className="text-xs font-bangers tracking-wider text-gray-400 uppercase mb-1">Pitching Line</div>
-            <div className="overflow-x-auto border border-gray-200 rounded">
-              <table className="w-full text-sm font-sans">
+            <div className="text-xs text-mist uppercase tracking-wider mb-2 font-medium">Pitching Line</div>
+            <div
+              className="overflow-x-auto rounded-xl"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
+                  <tr style={{ background: '#1C1C1E', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     {LINE_COLS.map((c) => (
-                      <th key={c.key} className="px-3 py-1.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      <th key={c.key} className="px-3 py-2 text-center text-xs font-semibold text-mist uppercase tracking-wider whitespace-nowrap">
                         {c.label}
                       </th>
                     ))}
@@ -219,7 +234,7 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
                     {LINE_COLS.map((c) => {
                       const val = summary.line[c.key]
                       return (
-                        <td key={c.key} className="px-3 py-2 font-mono text-gray-800">
+                        <td key={c.key} className="px-3 py-2 font-mono text-snow">
                           {c.fmt ? c.fmt(val) : (val ?? '–')}
                         </td>
                       )
@@ -232,10 +247,16 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
 
           {/* Scatter plots side by side */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="border border-gray-200 rounded p-3 bg-gray-50">
+            <div
+              className="rounded-xl p-3"
+              style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
               <StrikeZonePlot pitches={summary.pitches} />
             </div>
-            <div className="border border-gray-200 rounded p-3 bg-gray-50">
+            <div
+              className="rounded-xl p-3"
+              style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
               <ReleasePointPlot pitches={summary.pitches} />
             </div>
           </div>
@@ -244,22 +265,25 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
           <div className="flex flex-wrap gap-3">
             {pitchTypes.map((pt) => (
               <div key={pt} className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-full border border-black/10 flex-shrink-0"
-                     style={{ backgroundColor: pitchColor(pt) }} />
-                <span className="text-xs text-gray-500 font-sans">{PITCH_LABEL[pt] || pt}</span>
+                <div className="w-3 h-3 rounded-full flex-shrink-0"
+                     style={{ backgroundColor: pitchColor(pt), border: '1px solid rgba(255,255,255,0.15)' }} />
+                <span className="text-xs text-mist">{PITCH_LABEL[pt] || pt}</span>
               </div>
             ))}
           </div>
 
           {/* Pitch breakdown with heat map */}
           <div>
-            <div className="text-xs font-bangers tracking-wider text-gray-400 uppercase mb-1">Pitch Breakdown</div>
-            <div className="overflow-x-auto border border-gray-200 rounded">
-              <table className="w-full text-sm font-sans">
+            <div className="text-xs text-mist uppercase tracking-wider mb-2 font-medium">Pitch Breakdown</div>
+            <div
+              className="overflow-x-auto rounded-xl"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
+                  <tr style={{ background: '#1C1C1E', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                     {ARSENAL_COLS.map((c) => (
-                      <th key={c.key} className="px-3 py-1.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      <th key={c.key} className="px-3 py-2 text-center text-xs font-semibold text-mist uppercase tracking-wider whitespace-nowrap">
                         {c.label}
                       </th>
                     ))}
@@ -267,7 +291,10 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
                 </thead>
                 <tbody>
                   {summary.arsenal.map((row) => (
-                    <tr key={row.pitch_type} className="border-b border-gray-100">
+                    <tr
+                      key={row.pitch_type}
+                      style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                    >
                       {ARSENAL_COLS.map((c, ci) => {
                         const val = row[c.key]
                         const range = c.heat ? getRange(row.pitch_type, c.key) : null
@@ -287,7 +314,7 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
                           )
                         }
                         return (
-                          <td key={c.key} className="px-3 py-2 text-center font-mono" style={style}>
+                          <td key={c.key} className="px-3 py-2 text-center font-mono text-snow" style={style}>
                             {c.fmt ? c.fmt(val) : (val ?? '–')}
                           </td>
                         )

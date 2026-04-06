@@ -128,43 +128,67 @@ export default function MLBDashboard() {
   const currentCols = tab === 3 ? SEARCH_COLS : tab === 1 ? PITCHING_COLS : HITTING_COLS
 
   return (
-    <div className="min-h-screen bg-sv-light">
+    <div className="min-h-screen bg-void">
       <Navbar />
 
-      {/* MLB Header */}
-      <header className="bg-sv-dark border-b-4 border-sv-red px-6 py-5">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      {/* Header */}
+      <div
+        className="border-b"
+        style={{ background: '#141414', borderColor: 'rgba(255,255,255,0.08)' }}
+      >
+        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <span className="text-3xl">⚾</span>
-              <h1 className="font-bangers text-white text-4xl tracking-wider">MLB STATCAST</h1>
-              <span className="bg-sv-red text-white text-xs font-bangers px-2 py-0.5 tracking-wider">2026</span>
+            <div className="flex items-center gap-3 mb-1.5">
+              <span
+                className="text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+                style={{
+                  background: 'rgba(14,165,233,0.12)',
+                  color: '#0EA5E9',
+                  border: '1px solid rgba(14,165,233,0.20)',
+                }}
+              >
+                MLB
+              </span>
+              <h1 className="text-snow font-semibold tracking-tight text-2xl">
+                Statcast Analytics
+              </h1>
             </div>
-            <p className="text-gray-400 text-sm font-sans">
+            <p className="text-sm text-mist">
               Pitch-by-pitch Statcast data — same source as Baseball Savant
             </p>
           </div>
           {dataStatus && (
-            <div className="text-right text-xs text-gray-400 font-sans">
-              <div>Last updated: <span className="text-white">{dataStatus.latest_game_date || '–'}</span></div>
-              <div>Total pitches: <span className="text-white">{dataStatus.total_pitches?.toLocaleString() || '–'}</span></div>
+            <div className="text-right text-xs text-mist">
+              <div>Last updated: <span className="text-snow">{dataStatus.latest_game_date || '–'}</span></div>
+              <div>Total pitches: <span className="text-snow">{dataStatus.total_pitches?.toLocaleString() || '–'}</span></div>
             </div>
           )}
         </div>
-      </header>
+      </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Tabs */}
-        <div className="flex border-b-2 border-gray-300 mb-6">
+        <div
+          className="flex gap-1 mb-6 p-1 rounded-xl"
+          style={{ background: '#1C1C1E', width: 'fit-content' }}
+        >
           {TABS.map((t, i) => (
             <button
               key={t}
               onClick={() => setTab(i)}
-              className={`px-5 py-3 font-bangers tracking-wider text-sm uppercase transition-colors border-b-4 -mb-0.5 ${
+              className="px-4 py-2 text-sm rounded-lg transition-all duration-150 font-medium"
+              style={
                 tab === i
-                  ? 'border-sv-red text-sv-red bg-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-800 bg-transparent'
-              }`}
+                  ? {
+                      background: 'rgba(14,165,233,0.15)',
+                      color: '#0EA5E9',
+                      border: '1px solid rgba(14,165,233,0.25)',
+                    }
+                  : {
+                      color: '#86868B',
+                      border: '1px solid transparent',
+                    }
+              }
             >
               {t}
             </button>
@@ -187,15 +211,16 @@ export default function MLBDashboard() {
           <>
             {/* Results header */}
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-gray-500 font-sans">
+              <span className="text-sm text-mist">
                 {loading ? 'Loading…' : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}`}
               </span>
               {tab === 3 && (
-                <div className="flex gap-2 items-center text-xs font-sans text-gray-500">
+                <div className="flex gap-2 items-center text-xs text-mist">
                   <button
                     disabled={filters.offset === 0}
                     onClick={() => setFilter('offset', Math.max(0, filters.offset - filters.limit))}
-                    className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                    className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
+                    style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
                   >
                     ← Prev
                   </button>
@@ -203,7 +228,8 @@ export default function MLBDashboard() {
                   <button
                     disabled={filters.offset + filters.limit >= total}
                     onClick={() => setFilter('offset', filters.offset + filters.limit)}
-                    className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                    className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
+                    style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
                   >
                     Next →
                   </button>
@@ -212,9 +238,12 @@ export default function MLBDashboard() {
             </div>
 
             {/* Table */}
-            <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
+            <div
+              className="rounded-xl overflow-hidden"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
               {loading ? (
-                <div className="py-20 text-center text-gray-400 font-sans text-sm animate-pulse">
+                <div className="py-20 text-center text-mist text-sm animate-pulse" style={{ background: '#141414' }}>
                   Loading Statcast data…
                 </div>
               ) : (
@@ -235,7 +264,10 @@ export default function MLBDashboard() {
 
 function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
   return (
-    <div className="bg-white border border-gray-200 rounded p-4 mb-4 flex flex-wrap gap-3 items-end">
+    <div
+      className="rounded-xl p-4 mb-4 flex flex-wrap gap-3 items-end"
+      style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.08)' }}
+    >
       {/* Season */}
       <FilterSelect
         label="Season"
@@ -311,14 +343,24 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
   )
 }
 
+const selectStyle = {
+  background: '#2C2C2E',
+  border: '1px solid rgba(255,255,255,0.10)',
+  color: '#F5F5F7',
+  borderRadius: '0.5rem',
+  padding: '0.375rem 0.625rem',
+  fontSize: '0.875rem',
+  outline: 'none',
+}
+
 function FilterSelect({ label, value, onChange, options }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-sans text-gray-500 uppercase tracking-wider">{label}</label>
+      <label className="text-xs text-mist uppercase tracking-wider">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="border border-gray-300 rounded px-2 py-1.5 text-sm font-sans bg-white focus:outline-none focus:border-sv-blue"
+        style={selectStyle}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
@@ -331,12 +373,12 @@ function FilterSelect({ label, value, onChange, options }) {
 function FilterInput({ label, type = 'text', value, onChange }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs font-sans text-gray-500 uppercase tracking-wider">{label}</label>
+      <label className="text-xs text-mist uppercase tracking-wider">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="border border-gray-300 rounded px-2 py-1.5 text-sm font-sans w-24 focus:outline-none focus:border-sv-blue"
+        style={{ ...selectStyle, width: '6rem' }}
       />
     </div>
   )

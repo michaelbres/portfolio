@@ -81,12 +81,18 @@ export default function GameSummary({ season }) {
 
       <div className="space-y-4">
         {/* Date strip */}
-        <div className="bg-white border border-gray-200 rounded p-3">
-          <p className="text-xs font-sans text-gray-400 uppercase tracking-wider mb-2">Select Date</p>
+        <div
+          className="rounded-xl p-4"
+          style={{
+            background: '#1C1C1E',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <p className="text-xs text-mist uppercase tracking-wider mb-3">Select Date</p>
           {loadingDates ? (
-            <p className="text-sm text-gray-400 font-sans animate-pulse">Loading dates…</p>
+            <p className="text-sm text-mist animate-pulse">Loading dates…</p>
           ) : dates.length === 0 ? (
-            <p className="text-sm text-gray-400 font-sans">No game data available for this season yet.</p>
+            <p className="text-sm text-mist">No game data available for this season yet.</p>
           ) : (
             <div
               ref={dateStripRef}
@@ -97,11 +103,20 @@ export default function GameSummary({ season }) {
                 <button
                   key={d}
                   onClick={() => selectDate(d)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded text-xs font-bangers tracking-wider transition-colors whitespace-nowrap ${
+                  className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 whitespace-nowrap"
+                  style={
                     d === selectedDate
-                      ? 'bg-sv-red text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                      ? {
+                          background: 'rgba(14,165,233,0.15)',
+                          color: '#0EA5E9',
+                          border: '1px solid rgba(14,165,233,0.30)',
+                        }
+                      : {
+                          background: 'rgba(255,255,255,0.05)',
+                          color: '#86868B',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                        }
+                  }
                 >
                   {formatDateLabel(d)}
                 </button>
@@ -112,19 +127,25 @@ export default function GameSummary({ season }) {
 
         {/* Pitchers for selected date */}
         {selectedDate && (
-          <div className="bg-white border border-gray-200 rounded p-4">
-            <p className="text-xs font-sans text-gray-400 uppercase tracking-wider mb-3">
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: '#1C1C1E',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <p className="text-xs text-mist uppercase tracking-wider mb-3">
               {formatDateLabel(selectedDate)} — click a pitcher to see their game
             </p>
             {loadingPitchers ? (
-              <p className="text-sm text-gray-400 font-sans animate-pulse">Loading pitchers…</p>
+              <p className="text-sm text-mist animate-pulse">Loading pitchers…</p>
             ) : games.length === 0 ? (
-              <p className="text-sm text-gray-400 font-sans">No pitching data for this date.</p>
+              <p className="text-sm text-mist">No pitching data for this date.</p>
             ) : (
               <div className="space-y-4">
                 {games.map((game) => (
                   <div key={`${game.away}@${game.home}`}>
-                    <div className="text-xs font-bangers tracking-wider text-sv-blue mb-1.5">
+                    <div className="text-xs font-medium text-electric mb-2 tracking-wide">
                       {game.away} @ {game.home}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -133,10 +154,23 @@ export default function GameSummary({ season }) {
                           key={`${p.pitcher_id}:${p.game_pk}`}
                           onClick={() => openCard(p)}
                           disabled={loadingCard}
-                          className="px-3 py-1.5 rounded border border-gray-300 text-xs font-sans text-gray-700 hover:border-sv-red hover:text-sv-red hover:bg-red-50 transition-colors disabled:opacity-50"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50"
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            color: '#F5F5F7',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(14,165,233,0.40)'
+                            e.currentTarget.style.color = '#0EA5E9'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'
+                            e.currentTarget.style.color = '#F5F5F7'
+                          }}
                         >
                           {p.pitcher_name}
-                          <span className="ml-1.5 text-gray-400">{p.total_pitches}p</span>
+                          <span className="ml-1.5 text-mist">{p.total_pitches}p</span>
                         </button>
                       ))}
                     </div>
@@ -145,7 +179,7 @@ export default function GameSummary({ season }) {
               </div>
             )}
             {loadingCard && (
-              <p className="text-xs text-gray-400 font-sans animate-pulse mt-3">Loading card…</p>
+              <p className="text-xs text-mist animate-pulse mt-3">Loading card…</p>
             )}
           </div>
         )}

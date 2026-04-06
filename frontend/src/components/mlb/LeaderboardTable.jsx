@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-// Color scale: red (high) → white → blue (low), Baseball Savant style
+// Color scale: red (high) → blue (low), dark-theme compatible
 function valueColor(val, min, max, higherIsBetter = true) {
   if (val == null || min == null || max == null || min === max) return ''
   const pct = (val - min) / (max - min)
   const adjusted = higherIsBetter ? pct : 1 - pct
-  if (adjusted >= 0.85) return 'bg-red-100 text-red-900 font-semibold'
-  if (adjusted >= 0.65) return 'bg-orange-50 text-orange-900'
-  if (adjusted <= 0.15) return 'bg-blue-100 text-blue-900 font-semibold'
-  if (adjusted <= 0.35) return 'bg-sky-50 text-sky-900'
+  if (adjusted >= 0.85) return 'bg-red-900/40 text-red-300 font-semibold'
+  if (adjusted >= 0.65) return 'bg-orange-900/20 text-orange-300'
+  if (adjusted <= 0.15) return 'bg-blue-900/40 text-blue-300 font-semibold'
+  if (adjusted <= 0.35) return 'bg-sky-900/20 text-sky-300'
   return ''
 }
 
@@ -49,7 +49,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
               <th
                 key={col.key}
                 onClick={() => handleSort(col.key)}
-                className={sortKey === col.key ? '!bg-sv-blue' : ''}
+                style={sortKey === col.key ? { background: 'rgba(14,165,233,0.20)', color: '#0EA5E9' } : {}}
                 title={col.description}
               >
                 <span className="flex items-center gap-1">
@@ -65,7 +65,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
         <tbody>
           {sorted.map((row, i) => (
             <tr key={i}>
-              <td className="text-center text-gray-400 text-xs">{i + 1}</td>
+              <td className="text-center text-mist text-xs">{i + 1}</td>
               {columns.map((col) => {
                 const val = row[col.key]
                 const colorClass = col.colorScale
@@ -80,7 +80,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
                       {linkTo && id ? (
                         <Link
                           to={`${basePath}/${id}`}
-                          className="text-sv-blue hover:underline font-medium"
+                          className="text-electric hover:underline font-medium"
                         >
                           {val ?? '–'}
                         </Link>
@@ -103,7 +103,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
       </table>
 
       {sorted.length === 0 && (
-        <div className="text-center py-12 text-gray-400 font-sans text-sm">
+        <div className="text-center py-12 text-mist text-sm">
           No data — check filters or wait for the data pipeline to run.
         </div>
       )}

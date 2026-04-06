@@ -31,6 +31,12 @@ const PITCH_LOG_COLS = [
   { key: 'estimated_woba_using_speedangle', label: 'xwOBA', format: (v) => v?.toFixed(3) },
 ]
 
+const cardStyle = {
+  background: '#1C1C1E',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '0.75rem',
+}
+
 export default function PitcherDetail() {
   const { id } = useParams()
   const [tab, setTab] = useState(0)
@@ -63,9 +69,9 @@ export default function PitcherDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-sv-light">
+      <div className="min-h-screen bg-void">
         <Navbar />
-        <div className="flex items-center justify-center h-64 text-gray-400 font-sans animate-pulse">
+        <div className="flex items-center justify-center h-64 text-mist animate-pulse">
           Loading pitcher data…
         </div>
       </div>
@@ -74,11 +80,11 @@ export default function PitcherDetail() {
 
   if (!summary) {
     return (
-      <div className="min-h-screen bg-sv-light">
+      <div className="min-h-screen bg-void">
         <Navbar />
         <div className="flex flex-col items-center justify-center h-64 gap-4">
-          <div className="text-gray-600 font-sans">Pitcher not found.</div>
-          <Link to="/sports/mlb" className="text-sv-blue hover:underline font-sans text-sm">
+          <div className="text-mist">Pitcher not found.</div>
+          <Link to="/sports/mlb" className="text-electric hover:underline text-sm">
             ← Back to MLB
           </Link>
         </div>
@@ -87,27 +93,37 @@ export default function PitcherDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-sv-light">
+    <div className="min-h-screen bg-void">
       <Navbar />
 
       {/* Header */}
-      <header className="bg-sv-dark border-b-4 border-sv-red px-6 py-5">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-2 text-xs text-gray-400 mb-3 font-sans">
-            <Link to="/sports/mlb" className="hover:text-pop-yellow transition-colors">MLB</Link>
+      <div
+        className="border-b"
+        style={{ background: '#141414', borderColor: 'rgba(255,255,255,0.08)' }}
+      >
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center gap-2 text-xs text-mist mb-3">
+            <Link to="/sports/mlb" className="hover:text-snow transition-colors">MLB</Link>
             <span>›</span>
-            <span className="text-white">{summary.pitcher_name}</span>
+            <span className="text-snow">{summary.pitcher_name}</span>
           </div>
           <div className="flex flex-wrap items-end gap-6">
             <div>
-              <h1 className="font-bangers text-white text-5xl tracking-wider leading-none">
+              <h1 className="text-snow text-3xl font-semibold tracking-tight leading-none">
                 {summary.pitcher_name}
               </h1>
               <div className="flex items-center gap-3 mt-2">
-                <span className="bg-sv-red text-white text-xs font-bangers px-2 py-0.5 tracking-wider">
+                <span
+                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: 'rgba(14,165,233,0.12)',
+                    color: '#0EA5E9',
+                    border: '1px solid rgba(14,165,233,0.20)',
+                  }}
+                >
                   {summary.p_throws === 'R' ? 'RHP' : summary.p_throws === 'L' ? 'LHP' : '–'}
                 </span>
-                <span className="text-gray-400 text-sm font-sans">
+                <span className="text-mist text-sm">
                   {summary.total_pitches?.toLocaleString()} pitches in {season}
                 </span>
               </div>
@@ -116,7 +132,14 @@ export default function PitcherDetail() {
               <select
                 value={season}
                 onChange={(e) => setSeason(Number(e.target.value))}
-                className="bg-sv-dark border border-gray-600 text-white px-3 py-1.5 rounded text-sm font-sans"
+                style={{
+                  background: '#2C2C2E',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  color: '#F5F5F7',
+                  borderRadius: '0.5rem',
+                  padding: '0.375rem 0.75rem',
+                  fontSize: '0.875rem',
+                }}
               >
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
@@ -124,20 +147,31 @@ export default function PitcherDetail() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Tabs */}
-        <div className="flex border-b-2 border-gray-300 mb-6">
+        <div
+          className="flex gap-1 mb-6 p-1 rounded-xl"
+          style={{ background: '#1C1C1E', width: 'fit-content' }}
+        >
           {TABS.map((t, i) => (
             <button
               key={t}
               onClick={() => setTab(i)}
-              className={`px-5 py-3 font-bangers tracking-wider text-sm uppercase transition-colors border-b-4 -mb-0.5 ${
+              className="px-4 py-2 text-sm rounded-lg transition-all duration-150 font-medium"
+              style={
                 tab === i
-                  ? 'border-sv-red text-sv-red bg-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-800'
-              }`}
+                  ? {
+                      background: 'rgba(14,165,233,0.15)',
+                      color: '#0EA5E9',
+                      border: '1px solid rgba(14,165,233,0.25)',
+                    }
+                  : {
+                      color: '#86868B',
+                      border: '1px solid transparent',
+                    }
+              }
             >
               {t}
             </button>
@@ -169,22 +203,25 @@ export default function PitcherDetail() {
         {tab === 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Usage bar chart */}
-            <div className="bg-white border border-gray-200 rounded shadow-sm p-4">
-              <h3 className="font-bangers text-xl tracking-wider text-sv-dark mb-4">PITCH USAGE</h3>
+            <div style={cardStyle} className="p-4">
+              <h3 className="text-snow font-semibold tracking-tight mb-4">Pitch Usage</h3>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart
                   data={[...summary.arsenal].sort((a, b) => b.count - a.count)}
                   margin={{ left: 10, right: 10, bottom: 30 }}
                   layout="vertical"
                 >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.06)" />
                   <XAxis type="number" tickFormatter={(v) => v + '%'} domain={[0, 'auto']}
-                         tick={{ fontSize: 11 }} />
+                         tick={{ fontSize: 11, fill: '#86868B' }} />
                   <YAxis
                     type="category" dataKey="pitch_name" width={120}
-                    tick={{ fontSize: 11 }} tickLine={false}
+                    tick={{ fontSize: 11, fill: '#86868B' }} tickLine={false}
                   />
-                  <Tooltip formatter={(v) => v.toFixed(1) + '%'} />
+                  <Tooltip
+                    contentStyle={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.12)', color: '#F5F5F7', fontSize: 12 }}
+                    formatter={(v) => v.toFixed(1) + '%'}
+                  />
                   <Bar dataKey="usage_pct" isAnimationActive={false}>
                     {summary.arsenal.map((a) => (
                       <Cell key={a.pitch_type} fill={pitchColor(a.pitch_type)} />
@@ -195,9 +232,9 @@ export default function PitcherDetail() {
             </div>
 
             {/* Arsenal stats table */}
-            <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200">
-                <h3 className="font-bangers text-xl tracking-wider text-sv-dark">ARSENAL BREAKDOWN</h3>
+            <div style={cardStyle} className="overflow-hidden">
+              <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <h3 className="text-snow font-semibold tracking-tight">Arsenal Breakdown</h3>
               </div>
               <table className="savant-table">
                 <thead>
@@ -216,8 +253,8 @@ export default function PitcherDetail() {
                     <tr key={a.pitch_type}>
                       <td>
                         <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full border border-black/20 shrink-0"
-                               style={{ backgroundColor: pitchColor(a.pitch_type) }} />
+                          <div className="w-3 h-3 rounded-full flex-shrink-0"
+                               style={{ backgroundColor: pitchColor(a.pitch_type), border: '1px solid rgba(255,255,255,0.15)' }} />
                           <span className="text-xs">{a.pitch_name || a.pitch_type}</span>
                         </div>
                       </td>
@@ -240,7 +277,7 @@ export default function PitcherDetail() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {/* All pitches */}
             <div>
-              <div className="text-xs font-bangers tracking-wider text-gray-500 mb-2 uppercase">
+              <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
                 All Pitches ({filteredPitches.length})
               </div>
               <PitchLocationChart pitches={filteredPitches} height={320} />
@@ -251,7 +288,7 @@ export default function PitcherDetail() {
                 const pts = pitches.filter((p) => p.pitch_type === a.pitch_type)
                 return (
                   <div key={a.pitch_type}>
-                    <div className="text-xs font-bangers tracking-wider text-gray-500 mb-2 uppercase">
+                    <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
                       {a.pitch_name || a.pitch_type} ({pts.length})
                     </div>
                     <PitchLocationChart pitches={pts} height={320} />
@@ -265,15 +302,15 @@ export default function PitcherDetail() {
         {tab === 2 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <div className="text-xs font-bangers tracking-wider text-gray-500 mb-2 uppercase">
+              <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
                 All Pitches ({filteredPitches.length})
               </div>
               <PitchMovementChart pitches={filteredPitches} />
             </div>
             {/* Velocity over time by pitch type */}
-            <div className="bg-sv-dark rounded p-3">
-              <div className="text-white text-xs font-bangers tracking-wider mb-3">
-                VELOCITY TREND (LAST 200 PITCHES)
+            <div style={cardStyle} className="p-3">
+              <div className="text-snow text-sm font-medium tracking-wide mb-3">
+                Velocity Trend (last 200 pitches)
               </div>
               <VeloTrendChart pitches={pitches.slice(0, 200).reverse()} arsenal={summary.arsenal} />
             </div>
@@ -282,22 +319,24 @@ export default function PitcherDetail() {
 
         {/* ── PITCH LOG TAB ── */}
         {tab === 3 && (
-          <div className="bg-white border border-gray-200 rounded shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-bangers text-xl tracking-wider text-sv-dark">
-                PITCH LOG ({logTotal.toLocaleString()} total)
+          <div style={cardStyle} className="overflow-hidden">
+            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h3 className="text-snow font-semibold tracking-tight">
+                Pitch Log ({logTotal.toLocaleString()} total)
               </h3>
-              <div className="flex gap-2 items-center text-xs font-sans text-gray-500">
+              <div className="flex gap-2 items-center text-xs text-mist">
                 <button
                   disabled={logOffset === 0}
                   onClick={() => setLogOffset(Math.max(0, logOffset - 200))}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                  className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
+                  style={{ background: '#2C2C2E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
                 >← Prev</button>
                 <span>Showing {logOffset + 1}–{Math.min(logOffset + 200, logTotal)}</span>
                 <button
                   disabled={logOffset + 200 >= logTotal}
                   onClick={() => setLogOffset(logOffset + 200)}
-                  className="px-3 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-100"
+                  className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
+                  style={{ background: '#2C2C2E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
                 >Next →</button>
               </div>
             </div>
@@ -313,10 +352,16 @@ function PitchPill({ active, onClick, label, color }) {
   return (
     <button
       onClick={onClick}
-      className={`text-xs px-3 py-1 rounded-full border-2 font-sans transition-all ${
-        active ? 'text-white' : 'text-gray-600 border-gray-300 bg-white hover:border-gray-500'
-      }`}
-      style={active ? { backgroundColor: color, borderColor: color } : {}}
+      className="text-xs px-3 py-1 rounded-full transition-all duration-150 font-medium"
+      style={
+        active
+          ? { backgroundColor: color, color: '#fff', border: `2px solid ${color}` }
+          : {
+              background: 'rgba(255,255,255,0.05)',
+              color: '#86868B',
+              border: '2px solid rgba(255,255,255,0.10)',
+            }
+      }
     >
       {label}
     </button>
@@ -334,11 +379,11 @@ function VeloTrendChart({ pitches, arsenal }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ right: 10, left: -10 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-        <XAxis dataKey="i" tick={{ fill: '#aaa', fontSize: 10 }} tickLine={false} />
-        <YAxis domain={['auto', 'auto']} tick={{ fill: '#aaa', fontSize: 10 }} tickLine={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+        <XAxis dataKey="i" tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} />
+        <YAxis domain={['auto', 'auto']} tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} />
         <Tooltip
-          contentStyle={{ background: '#1a1a2e', border: '1px solid #444', color: '#fff', fontSize: 11 }}
+          contentStyle={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.12)', color: '#F5F5F7', fontSize: 11 }}
           formatter={(v, name) => [v?.toFixed(1) + ' mph', PITCH_LABEL[name] || name]}
         />
         {pitchTypes.map((pt) => (
