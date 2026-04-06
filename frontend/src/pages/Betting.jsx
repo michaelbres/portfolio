@@ -173,7 +173,7 @@ function Card({ children, className = '' }) {
 function ResultTag({ better }) {
   if (better === null) return null
   return (
-    <span className={`inline-block text-xs font-bangers tracking-wider px-2 py-0.5 rounded ${
+    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${
       better ? 'bg-green-900/50 text-green-400 border border-green-700' : 'bg-red-900/30 text-red-400 border border-red-800'
     }`}>
       {better ? '✓ BETTER LINE' : 'WORSE LINE'}
@@ -236,7 +236,7 @@ function CompareLines() {
       <div className="flex gap-2">
         {SPORTS.map((s) => (
           <button key={s} onClick={() => setSport(s)}
-            className={`px-4 py-1.5 rounded text-sm font-bangers tracking-wider transition-colors ${
+            className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
               sport === s ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}>{s}</button>
         ))}
@@ -245,7 +245,7 @@ function CompareLines() {
       {/* Line inputs */}
       <div className="grid md:grid-cols-2 gap-4">
         <Card>
-          <div className="font-bangers text-white tracking-wider text-lg mb-3">
+          <div className="font-medium text-snow text-base mb-3">
             Line 1 <span className="text-xs text-gray-400 font-sans tracking-normal ml-1">(anchor)</span>
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
@@ -262,11 +262,11 @@ function CompareLines() {
 
         <Card>
           <div className="flex items-center justify-between mb-3">
-            <div className="font-bangers text-white tracking-wider text-lg">
+            <div className="font-medium text-snow text-base">
               Line 2 <span className="text-xs text-gray-400 font-sans tracking-normal ml-1">(compare)</span>
             </div>
             {edge !== null && (
-              <span className={`text-xs font-bangers tracking-wider px-2 py-0.5 rounded border ${
+              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
                 l2Better ? 'bg-green-900/50 text-green-400 border-green-700' :
                 l1Better ? 'bg-red-900/30 text-red-400 border-red-800' :
                 'bg-gray-800 text-gray-400 border-gray-700'
@@ -413,7 +413,7 @@ function NoVig() {
 
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
-              <div className="font-bangers text-white tracking-wider mb-3">Side A — Fair Odds</div>
+              <div className="font-medium text-snow mb-3">Side A — Fair Odds</div>
               <div className="grid grid-cols-2 gap-2">
                 <StatBox label="Fair Prob"    value={fmtPct(fair1)} highlight />
                 <StatBox label="Fair American" value={fmtAmerican(probToAmerican(fair1))} highlight />
@@ -424,7 +424,7 @@ function NoVig() {
               </div>
             </Card>
             <Card>
-              <div className="font-bangers text-white tracking-wider mb-3">Side B — Fair Odds</div>
+              <div className="font-medium text-snow mb-3">Side B — Fair Odds</div>
               <div className="grid grid-cols-2 gap-2">
                 <StatBox label="Fair Prob"    value={fmtPct(fair2)} highlight />
                 <StatBox label="Fair American" value={fmtAmerican(probToAmerican(fair2))} highlight />
@@ -778,18 +778,24 @@ export default function Betting() {
   const [tab, setTab] = useState(0)
 
   return (
-    <div className="min-h-screen bg-sv-dark">
+    <div className="min-h-screen bg-void">
       <Navbar />
 
       {/* Header */}
-      <header className="border-b-4 border-pop-yellow px-6 py-8" style={{ background: '#0d0d1a' }}>
+      <header className="px-6 py-7" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-3xl">🎲</span>
-            <h1 className="font-bangers text-white text-4xl tracking-wider">BETTING TOOLS</h1>
-            <span className="bg-pop-yellow text-black text-xs font-bangers px-2 py-0.5 tracking-wider">CALCULATORS</span>
+          <div className="flex items-center gap-3 mb-1.5">
+            <span
+              className="text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+              style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981', border: '1px solid rgba(16,185,129,0.2)' }}
+            >
+              Calculators
+            </span>
+            <h1 className="text-snow font-bold text-2xl tracking-tight" style={{ letterSpacing: '-0.02em' }}>
+              Betting Tools
+            </h1>
           </div>
-          <p className="text-gray-400 text-sm font-sans">
+          <p className="text-mist text-sm leading-relaxed">
             Compare lines, remove vig, build parlays, convert odds, and calculate expected value.
           </p>
         </div>
@@ -797,16 +803,17 @@ export default function Betting() {
 
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Tab bar */}
-        <div className="flex flex-wrap border-b-2 border-gray-800 mb-6 gap-0">
+        <div className="flex flex-wrap mb-6 gap-1">
           {TABS.map((t, i) => (
             <button
               key={t}
               onClick={() => setTab(i)}
-              className={`px-4 py-3 font-bangers tracking-wider text-sm uppercase border-b-4 -mb-0.5 transition-colors whitespace-nowrap ${
-                tab === i
-                  ? 'border-pop-yellow text-pop-yellow'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap"
+              style={{
+                background: tab === i ? 'rgba(16,185,129,0.15)' : 'transparent',
+                color: tab === i ? '#10B981' : '#86868B',
+                border: tab === i ? '1px solid rgba(16,185,129,0.3)' : '1px solid transparent',
+              }}
             >
               {t}
             </button>

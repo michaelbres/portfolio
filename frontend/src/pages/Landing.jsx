@@ -1,183 +1,334 @@
+// /home/user/portfolio/frontend/src/pages/Landing.jsx
 import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 
-const PROJECTS = [
-  {
-    to: '/sports',
-    title: 'Sports Analytics',
-    subtitle: 'MLB · Statcast · Pitch Data',
-    description:
-      'Baseball Savant-style pitch analytics. Search every pitch from the 2025 season, explore pitcher arsenals, and build Stuff+ models.',
-    color: 'bg-sv-red',
-    textColor: 'text-white',
-    accentColor: 'bg-pop-yellow',
-    emoji: '⚾',
-    tag: 'LIVE',
-  },
-  {
-    to: '/betting',
-    title: 'Betting Tools',
-    subtitle: 'Compare Lines · No-Vig · Parlay · EV',
-    description:
-      'Five calculators in one: compare lines across books, strip vig to find fair odds, build parlays, convert formats, and calculate expected value with Kelly sizing.',
-    color: 'bg-sv-dark',
-    textColor: 'text-white',
-    accentColor: 'bg-pop-yellow',
-    emoji: '🎲',
-    tag: 'LIVE',
-  },
-  {
-    to: '/sports/mlb/fair-value',
-    title: 'MLB Fair Value Model',
-    subtitle: 'Poisson · Pitch Count · Bullpen Fatigue',
-    description:
-      'Game-by-game win probabilities and fair odds using Statcast wOBA, pitch count–adjusted starter depth, bullpen fatigue, and park factors. Compare against Kalshi closing lines.',
-    color: 'bg-pop-blue',
-    textColor: 'text-white',
-    accentColor: 'bg-pop-yellow',
-    emoji: '📊',
-    tag: 'NEW',
-  },
-  {
-    to: '#',
-    title: 'Coming Soon',
-    subtitle: 'More projects on the way',
-    description: 'Check back for new analytics projects covering football, basketball, finance, and more.',
-    color: 'bg-gray-800',
-    textColor: 'text-white',
-    accentColor: 'bg-pop-yellow',
-    emoji: '🔮',
-    tag: 'SOON',
-  },
-]
+// ── Data pills ────────────────────────────────────────────────────────────────
 
-export default function Landing() {
+function Pill({ children }) {
+  return <span className="data-pill">{children}</span>
+}
+
+// ── Bento tiles ───────────────────────────────────────────────────────────────
+
+// Tile 1 — MLB Fair Value (hero tile, col-span-2 row-span-2)
+function FairValueTile() {
   return (
-    <div className="min-h-screen bg-white">
-      <Navbar />
+    <Link
+      to="/sports/mlb/fair-value"
+      className="bento-tile glow-electric block relative col-span-2 row-span-2 p-6 flex flex-col justify-between min-h-[280px] group"
+      style={{ textDecoration: 'none' }}
+    >
+      {/* Background lambda decoration */}
+      <span
+        aria-hidden="true"
+        className="absolute bottom-4 right-6 select-none pointer-events-none text-[9rem] font-thin leading-none animate-pulse-slow"
+        style={{ color: 'rgba(14,165,233,0.07)', fontFamily: 'Georgia, serif' }}
+      >
+        λ
+      </span>
 
-      {/* Hero */}
-      <header className="halftone-bg border-b-4 border-black overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6 py-20 flex flex-col items-start gap-6">
-          {/* ZAPP! label */}
-          <div className="bg-pop-yellow border-4 border-black px-4 py-1 inline-block"
-               style={{ boxShadow: '4px 4px 0 #000', transform: 'rotate(-1deg)' }}>
-            <span className="font-bangers text-black text-2xl tracking-widest">ANALYTICS PORTFOLIO</span>
-          </div>
+      {/* Top section */}
+      <div className="flex flex-col gap-3 relative z-10">
+        {/* Accent label */}
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(14,165,233,0.15)', color: '#0EA5E9' }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-electric animate-pulse inline-block" />
+            MLB · Fair Value
+          </span>
+        </div>
 
-          {/* Name */}
-          <h1
-            className="font-bangers text-black leading-none"
+        <h2 className="text-snow text-2xl font-semibold leading-tight tracking-tight">
+          MLB Fair Value Model
+        </h2>
+        <p className="text-mist text-sm leading-relaxed max-w-md">
+          xFIP-powered win probabilities. NegBin run distribution, team defense,
+          weather carry, Platt calibration. Compare fair odds against Kalshi closing lines.
+        </p>
+
+        {/* Data pills */}
+        <div className="flex flex-wrap gap-2 mt-1">
+          <Pill>NegBin r=3.0</Pill>
+          <Pill>xFIP vs Kalshi</Pill>
+          <Pill>72h fatigue</Pill>
+          <Pill>Platt scaling</Pill>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div className="relative z-10 mt-6 flex items-center gap-2">
+        <span
+          className="text-sm font-medium px-4 py-2 rounded-xl transition-all duration-200"
+          style={{
+            background: 'rgba(14,165,233,0.15)',
+            color: '#0EA5E9',
+            border: '1px solid rgba(14,165,233,0.25)',
+          }}
+        >
+          View Today's Odds →
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+// Tile 2 — Statcast Analytics (row-span-2)
+function StatcastTile() {
+  return (
+    <Link
+      to="/sports/mlb"
+      className="bento-tile glow-electric block relative p-6 flex flex-col justify-between min-h-[280px] group"
+      style={{ textDecoration: 'none' }}
+    >
+      {/* Top */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(14,165,233,0.12)', color: '#38BDF8' }}
+          >
+            Statcast
+          </span>
+        </div>
+        <h2 className="text-snow text-xl font-semibold leading-tight tracking-tight">
+          Pitch Analytics
+        </h2>
+        <p className="text-mist text-sm leading-relaxed">
+          500k+ pitch events. wOBA splits, movement profiles, Stuff+ modeling.
+        </p>
+        <div className="flex flex-wrap gap-2 mt-1">
+          <Pill>wOBA splits</Pill>
+          <Pill>Stuff+</Pill>
+          <Pill>IVB / HB</Pill>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div className="mt-4">
+        <span
+          className="text-xs font-medium"
+          style={{ color: '#38BDF8' }}
+        >
+          Explore Pitchers →
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+// Tile 3 — Betting Tools (1 col)
+function BettingTile() {
+  return (
+    <Link
+      to="/betting"
+      className="bento-tile glow-emerald block relative p-5 flex flex-col justify-between group"
+      style={{ textDecoration: 'none' }}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}
+          >
+            Tools
+          </span>
+        </div>
+        <h2 className="text-snow text-lg font-semibold leading-tight tracking-tight">
+          Betting Tools
+        </h2>
+        <p className="text-mist text-sm leading-relaxed">
+          No-vig odds, Kelly criterion, EV calculator, parlay builder.
+        </p>
+      </div>
+      <div className="mt-4">
+        <span className="text-xs font-medium" style={{ color: '#10B981' }}>
+          Open Tools →
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+// Tile 4 — Model Architecture (1 col)
+function ModelTile() {
+  return (
+    <Link
+      to="/sports/mlb/fair-value"
+      className="bento-tile glow-amethyst block relative p-5 flex flex-col justify-between group"
+      style={{ textDecoration: 'none' }}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(168,85,247,0.12)', color: '#A855F7' }}
+          >
+            Models
+          </span>
+        </div>
+        <h2 className="text-snow text-lg font-semibold leading-tight tracking-tight">
+          Model Architecture
+        </h2>
+
+        {/* Formula block */}
+        <div
+          className="mt-2 rounded-xl px-3 py-2.5 font-mono text-xs leading-relaxed"
+          style={{
+            background: 'rgba(168,85,247,0.08)',
+            border: '1px solid rgba(168,85,247,0.15)',
+            color: '#C084FC',
+          }}
+        >
+          λ = offense × xFIP<br />
+          {'  '}× defense × PF × HFA
+        </div>
+      </div>
+      <div className="mt-4">
+        <span className="text-xs font-medium" style={{ color: '#A855F7' }}>
+          Read More →
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+// Tile 5 — Coming Soon (1 col)
+function ComingSoonTile() {
+  return (
+    <div
+      className="bento-tile block relative p-5 flex flex-col justify-between"
+      style={{ background: '#1C1C1E', opacity: 0.85 }}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
+            style={{ background: 'rgba(134,134,139,0.12)', color: '#86868B' }}
+          >
+            Soon
+          </span>
+        </div>
+        <h2 className="text-mist text-lg font-semibold leading-tight tracking-tight">
+          NFL · NBA · Trading Bots
+        </h2>
+        <p className="text-mist text-sm leading-relaxed" style={{ opacity: 0.6 }}>
+          More projects in development.
+        </p>
+      </div>
+      <div className="mt-4 flex gap-1.5">
+        {['NFL', 'NBA', 'Quant'].map((tag) => (
+          <span
+            key={tag}
+            className="text-[10px] font-medium px-2 py-0.5 rounded-full"
             style={{
-              fontSize: 'clamp(4rem, 12vw, 10rem)',
-              letterSpacing: '0.04em',
-              WebkitTextStroke: '3px #000',
-              textShadow: '6px 6px 0 #FF2D2D',
+              background: 'rgba(134,134,139,0.10)',
+              color: '#86868B',
+              border: '1px solid rgba(134,134,139,0.15)',
             }}
           >
-            MICHAEL
-            <br />
-            BRESLOW
-          </h1>
-
-          {/* Tagline bubble */}
-          <div className="relative bg-white border-4 border-black px-6 py-3 max-w-xl"
-               style={{ boxShadow: '5px 5px 0 #000' }}>
-            {/* Speech bubble tail */}
-            <div className="absolute -bottom-5 left-10 w-0 h-0"
-                 style={{
-                   borderLeft: '12px solid transparent',
-                   borderRight: '12px solid transparent',
-                   borderTop: '20px solid #000',
-                 }} />
-            <div className="absolute -bottom-3 left-11 w-0 h-0"
-                 style={{
-                   borderLeft: '10px solid transparent',
-                   borderRight: '10px solid transparent',
-                   borderTop: '18px solid #fff',
-                 }} />
-            <p className="font-sans text-lg font-semibold text-gray-800">
-              Turning raw data into insights — one pitch at a time.
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {/* Projects */}
-      <main className="max-w-7xl mx-auto px-6 py-16">
-        <div className="flex items-center gap-4 mb-10">
-          <h2 className="font-bangers text-5xl tracking-wider"
-              style={{ textShadow: '3px 3px 0 #0055FF' }}>
-            PROJECTS
-          </h2>
-          <div className="flex-1 border-t-4 border-black" />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {PROJECTS.map((p) => (
-            <ProjectCard key={p.title} {...p} />
-          ))}
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t-4 border-black bg-black text-white py-8 px-6 text-center">
-        <span className="font-bangers text-pop-yellow tracking-widest text-lg">
-          MICHAEL BRESLOW
-        </span>
-        <span className="mx-3 text-gray-500">·</span>
-        <a
-          href="https://github.com/michaelbres"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-gray-300 hover:text-pop-yellow transition-colors font-sans text-sm"
-        >
-          github.com/michaelbres
-        </a>
-      </footer>
+            {tag}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
 
-function ProjectCard({ to, title, subtitle, description, color, textColor, accentColor, emoji, tag }) {
-  const isDisabled = to === '#'
-  const Wrapper = isDisabled ? 'div' : Link
+// ── Page ──────────────────────────────────────────────────────────────────────
 
+export default function Landing() {
   return (
-    <Wrapper
-      to={isDisabled ? undefined : to}
-      className={`comic-card block overflow-hidden ${isDisabled ? 'opacity-70 cursor-default' : ''}`}
-    >
-      {/* Card header */}
-      <div className={`${color} ${textColor} px-6 py-5 border-b-4 border-black`}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <span className="text-4xl">{emoji}</span>
-              <div className={`${accentColor} text-black text-xs font-bangens font-bold px-2 py-0.5 border-2 border-black`}>
-                {tag}
-              </div>
-            </div>
-            <h3 className="font-bangers text-3xl tracking-wider leading-none mt-2">{title}</h3>
-            <p className="text-sm opacity-80 mt-1 font-sans">{subtitle}</p>
-          </div>
-          {!isDisabled && (
-            <div className="text-3xl font-bangers mt-2 opacity-60">→</div>
-          )}
-        </div>
-      </div>
+    <div className="mesh-bg min-h-screen">
+      <Navbar />
 
-      {/* Card body */}
-      <div className="px-6 py-5 bg-white">
-        <p className="text-gray-700 font-sans text-sm leading-relaxed">{description}</p>
-        {!isDisabled && (
-          <div className="mt-4">
-            <span className="font-bangers text-sm tracking-widest text-sv-red uppercase border-b-2 border-sv-red">
-              Explore →
-            </span>
+      <main className="max-w-6xl mx-auto px-5 pt-20 pb-24">
+
+        {/* ── Hero ────────────────────────────────────────────────────── */}
+        <header className="mb-16 flex flex-col gap-4">
+          {/* Location tag */}
+          <span
+            className="inline-flex items-center gap-1.5 text-xs font-medium tracking-widest uppercase self-start px-3 py-1 rounded-full"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              color: '#86868B',
+            }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ background: '#10B981' }}
+            />
+            Boston, MA
+          </span>
+
+          {/* Name */}
+          <h1
+            className="text-snow font-display leading-none tracking-tight"
+            style={{
+              fontSize: 'clamp(3rem, 9vw, 7rem)',
+              fontWeight: 300,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Michael Breslow
+          </h1>
+
+          {/* Subtitle */}
+          <p
+            className="text-mist text-lg font-light tracking-wide"
+            style={{ letterSpacing: '0.04em' }}
+          >
+            Analytics Engineer &middot; Sports &middot; Markets &middot; Models
+          </p>
+        </header>
+
+        {/* ── Bento Grid ──────────────────────────────────────────────── */}
+        {/*
+          Desktop: 3-col grid. Tiles:
+            [FairValue x2 x2] [Statcast x1 x2]
+            (implicit from row-span-2 above)
+            [Betting x1]      [Model x1]       [ComingSoon x1]
+        */}
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4"
+          style={{ gridAutoRows: 'minmax(140px, auto)' }}
+        >
+          {/* Row 1 + 2: FairValue (col 1-2, row 1-2) + Statcast (col 3, row 1-2) */}
+          <div className="md:col-span-2 md:row-span-2">
+            <FairValueTile />
           </div>
-        )}
-      </div>
-    </Wrapper>
+          <div className="md:row-span-2">
+            <StatcastTile />
+          </div>
+
+          {/* Row 3: Betting, Model, ComingSoon */}
+          <BettingTile />
+          <ModelTile />
+          <ComingSoonTile />
+        </div>
+      </main>
+
+      {/* ── Footer ──────────────────────────────────────────────────── */}
+      <footer
+        className="border-t"
+        style={{ borderColor: 'rgba(255,255,255,0.06)' }}
+      >
+        <div className="max-w-6xl mx-auto px-5 py-8 flex items-center justify-between gap-4">
+          <span className="text-mist text-sm font-medium tracking-tight">
+            Michael Breslow
+          </span>
+          <a
+            href="https://github.com/michaelbres"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-mist hover:text-snow text-sm transition-colors duration-150"
+          >
+            github.com/michaelbres
+          </a>
+        </div>
+      </footer>
+    </div>
   )
 }
