@@ -174,6 +174,19 @@ def _compute_xfip(db: Session, pitcher_id: int,
 
 # ── Pitcher stats ─────────────────────────────────────────────────────────────
 
+def _pitcher_stats_default() -> dict:
+    return {
+        "woba_full":          None, "pa_full":    0,
+        "woba_recent":        None, "pa_recent":  0,
+        "woba_blended":       LEAGUE_AVG_WOBA,
+        "xfip_full":          None, "xfip_recent": None,
+        "xfip_blended":       LEAGUE_AVG_XFIP,
+        "ip_full":            0.0,  "ip_recent":   0.0,
+        "pitches_per_inning": 15.5,
+        "total_starts":       0,
+    }
+
+
 def pitcher_stats(db: Session, pitcher_id: int) -> dict:
     """
     Cross-season pitcher projection using:
@@ -186,7 +199,17 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
         woba_recent, pa_recent,
         woba_blended,
         pitches_per_inning
+
+    Falls back to league-average defaults if statcast_pitches is unavailable.
     """
+    try:
+        return _pitcher_stats_impl(db, pitcher_id)
+    except Exception:
+        log.warning("pitcher_stats failed for id=%s — using league-average defaults", pitcher_id)
+        return _pitcher_stats_default()
+
+
+def _pitcher_stats_impl(db: Session, pitcher_id: int) -> dict:
     # ── Find last N start game_pks (cross-season) ─────────────────────────────
     full_pks_rows = db.execute(text("""
         SELECT game_pk
@@ -411,6 +434,21 @@ def projected_lineup(db: Session, team: str,
     """
     Build a projected 9-man lineup for *team*.
 
+    Falls back to league-average defaults if statcast_pitches is unavailable
+    or if the batter_name column is absent (schema drift).
+    """
+    try:
+        return _projected_lineup_impl(db, team, sp_hand)
+    except Exception:
+        log.warning("projected_lineup failed for team=%s — using league-average defaults", team)
+        return _league_avg_lineup(sp_hand)
+
+
+def _projected_lineup_impl(db: Session, team: str,
+                           sp_hand: Optional[str] = None) -> list[dict]:
+    """
+    Build a projected 9-man lineup for *team*.
+
     Strategy:
       1. Find the last BULLPEN_SAMPLE_GAMES (40) team game_pks.
       2. Within those games identify the 9 batters who appeared most often
@@ -518,6 +556,19 @@ def lineup_weighted_woba(slots: list[dict]) -> float:
 # ── Bullpen stats ─────────────────────────────────────────────────────────────
 
 def team_bullpen_stats(db: Session, team: str, game_date: date) -> dict:
+    """
+    Compute bullpen quality for *team* entering *game_date*.
+
+    Falls back to league-average defaults if statcast_pitches is unavailable.
+    """
+    try:
+        return _team_bullpen_stats_impl(db, team, game_date)
+    except Exception:
+        log.warning("team_bullpen_stats failed for team=%s — using league-average defaults", team)
+        return {"woba_raw": LEAGUE_AVG_WOBA, "woba_fatigued": LEAGUE_AVG_WOBA}
+
+
+def _team_bullpen_stats_impl(db: Session, team: str, game_date: date) -> dict:
     """
     Compute bullpen quality for *team* entering *game_date*.
 

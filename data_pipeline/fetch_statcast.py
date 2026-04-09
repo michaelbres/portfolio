@@ -2,16 +2,16 @@
 Fetches Statcast pitch-by-pitch data and upserts it into the database.
 
 Modes:
-  --init   : Load the full 2025 regular season (skips dates already logged)
+  --init   : Load the full current season (skips dates already logged)
   --daily  : Fetch yesterday's data (default, used by GitHub Actions)
-  --date   : Fetch a specific date  e.g. --date 2025-04-15
-  --range  : Fetch a date range     e.g. --range 2025-04-01 2025-04-30
+  --date   : Fetch a specific date  e.g. --date 2026-04-15
+  --range  : Fetch a date range     e.g. --range 2026-04-01 2026-04-30
 
 Usage:
   python data_pipeline/fetch_statcast.py --init
   python data_pipeline/fetch_statcast.py --daily
-  python data_pipeline/fetch_statcast.py --date 2025-06-01
-  python data_pipeline/fetch_statcast.py --range 2025-04-01 2025-04-30
+  python data_pipeline/fetch_statcast.py --date 2026-06-01
+  python data_pipeline/fetch_statcast.py --range 2026-04-01 2026-04-30
 """
 
 import os
@@ -60,7 +60,7 @@ SEASON_START = {
     2025: date(2025, 3, 27),
     2026: date(2026, 3, 27),   # update if Opening Day changes
 }
-DEFAULT_SEASON = 2025
+DEFAULT_SEASON = date.today().year
 
 
 def get_already_fetched() -> set:

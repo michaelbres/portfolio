@@ -17,6 +17,7 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_sp_xfip_blended FLOAT",
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor FLOAT",
+    "ALTER TABLE statcast_pitches ADD COLUMN IF NOT EXISTS batter_name VARCHAR(100)",
 ]
 
 try:
