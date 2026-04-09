@@ -64,16 +64,16 @@ export default function FairValue() {
       })
       if (data.games_computed > 0) {
         setLastRun(`Computed ${data.games_computed} game(s)`)
-        await fetchGames(selectedDate)
-      } else if (data.error) {
-        setError(data.error)
       } else {
-        setError('No games found for this date.')
+        // "Already computed" and "no games" are informational, not errors
+        setLastRun(data.error || 'No games found for this date.')
       }
     } catch (e) {
       setError(e?.response?.data?.detail || 'Pipeline run failed. Check server logs.')
     } finally {
       setRunning(false)
+      // Always refresh game list — handles "already computed" case
+      fetchGames(selectedDate)
     }
   }
 

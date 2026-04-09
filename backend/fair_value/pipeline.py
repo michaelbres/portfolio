@@ -28,6 +28,7 @@ from .constants import (
     DEFAULT_PITCH_LIMIT,
     LEAGUE_AVG_WOBA,
     LEAGUE_AVG_XFIP,
+    MARKET_BLEND_WEIGHT,
     park_factor,
 )
 from .mlb_api import (
@@ -46,6 +47,7 @@ from .stats_engine import (
     batter_stats,
     team_defense_factor,
     team_hfa_factor,
+    team_run_factor,
     umpire_run_factor,
 )
 # stats_engine functions are all cross-season now; no season arg needed
@@ -56,7 +58,7 @@ from .win_probability import (
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "2.1"
+MODEL_VERSION = "2.2"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -253,11 +255,13 @@ def _process_game(db: Session, game: dict,
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
 
-    # Team defense, HFA, umpire factors
+    # Team defense, HFA, umpire, run factors
     home_def = team_defense_factor(db, home_team, game["game_date"])
     away_def = team_defense_factor(db, away_team, game["game_date"])
     hfa      = team_hfa_factor(db, home_team)
     umpire   = umpire_run_factor(db, game.get("umpire"))
+    home_rf  = team_run_factor(db, home_team, game["game_date"], season)
+    away_rf  = team_run_factor(db, away_team, game["game_date"], season)
 
     # Weather carry factor (temperature + wind, on top of static park factor)
     w_carry  = weather_carry_factor(home_team, game.get("game_time_utc"))
@@ -279,6 +283,8 @@ def _process_game(db: Session, game: dict,
         away_defense_factor=  away_def,
         home_hfa_factor=      hfa,
         umpire_factor=        umpire,
+        home_run_factor=      home_rf,
+        away_run_factor=      away_rf,
     )
 
     # Market implied probability (no-vig) for Bayesian blend
@@ -292,20 +298,32 @@ def _process_game(db: Session, game: dict,
     for line in kalshi_lines:
         ht = line.get("home_team", "").upper()
         if home_team in ht or ht in home_team:
-            if line.get("home_yes_price"):
+            hp = line.get("home_yes_price")
+            ap = line.get("away_yes_price")
+            if hp and ap:
                 from .win_probability import prob_to_american
-                home_market_odds = prob_to_american(line["home_yes_price"])
-                away_market_odds = prob_to_american(line["away_yes_price"])
+                # Strip Kalshi's implicit vig so both sides sum to 1.0
+                total = float(hp) + float(ap)
+                market_home_prob = float(hp) / total
+                home_market_odds = prob_to_american(market_home_prob)
+                away_market_odds = prob_to_american(1.0 - market_home_prob)
                 market_source    = "kalshi"
-                market_home_prob = float(line["home_yes_price"])
             break
 
-    # ── Apply Platt scaling + Bayesian market blend ───────────────────────────
-    raw_home_wp = fv["home_win_prob"]
-    final_home_wp = calibrated_prob(
-        raw_prob=     raw_home_wp,
-        market_prob=  market_home_prob,
-    )
+    # ── Apply Platt scaling ───────────────────────────────────────────────────
+    raw_home_wp   = fv["home_win_prob"]
+    final_home_wp = calibrated_prob(raw_prob=raw_home_wp)
+
+    # ── Step 5: Market calibration blend ─────────────────────────────────────
+    # When a sharp market probability is available (Kalshi), blend it in at
+    # MARKET_BLEND_WEIGHT (30%).  This captures information — injury news,
+    # travel fatigue, late lineup changes — not present in our Statcast model.
+    if market_home_prob is not None and MARKET_BLEND_WEIGHT > 0:
+        final_home_wp = (
+            (1.0 - MARKET_BLEND_WEIGHT) * final_home_wp
+            + MARKET_BLEND_WEIGHT * market_home_prob
+        )
+
     final_away_wp = 1.0 - final_home_wp
 
     from .win_probability import prob_to_american
@@ -342,18 +360,22 @@ def _process_game(db: Session, game: dict,
     row.home_sp_pitches_per_inning = round(home_sp_s["pitches_per_inning"], 2)
     row.home_sp_proj_innings       = fv["home_sp_proj_innings"]
     row.home_sp_woba_season        = home_sp_s.get("woba_full")
-    row.home_sp_woba_recent        = home_sp_s["woba_recent"]
-    row.home_sp_woba_blended       = home_sp_s["woba_blended"]
+    row.home_sp_woba_recent        = home_sp_s.get("woba_recent")
+    row.home_sp_woba_blended       = home_sp_s.get("woba_blended")
+    row.home_sp_xfip_blended       = home_sp_s.get("xfip_blended")
     row.home_sp_pa_season          = home_sp_s.get("pa_full", 0)
-    row.home_sp_pa_recent          = home_sp_s["pa_recent"]
+    row.home_sp_pa_recent          = home_sp_s.get("pa_recent", 0)
 
     row.away_sp_pitches_per_inning = round(away_sp_s["pitches_per_inning"], 2)
     row.away_sp_proj_innings       = fv["away_sp_proj_innings"]
     row.away_sp_woba_season        = away_sp_s.get("woba_full")
-    row.away_sp_woba_recent        = away_sp_s["woba_recent"]
-    row.away_sp_woba_blended       = away_sp_s["woba_blended"]
+    row.away_sp_woba_recent        = away_sp_s.get("woba_recent")
+    row.away_sp_woba_blended       = away_sp_s.get("woba_blended")
+    row.away_sp_xfip_blended       = away_sp_s.get("xfip_blended")
     row.away_sp_pa_season          = away_sp_s.get("pa_full", 0)
-    row.away_sp_pa_recent          = away_sp_s["pa_recent"]
+    row.away_sp_pa_recent          = away_sp_s.get("pa_recent", 0)
+
+    row.weather_carry_factor = w_carry
 
     row.home_bp_woba_raw      = round(home_bp["woba_raw"], 4)
     row.home_bp_woba_fatigued = round(home_bp["woba_fatigued"], 4)
@@ -438,11 +460,13 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
     home_sp_s = pitcher_stats(db, row.home_sp_id) if row.home_sp_id else _sp_default
     away_sp_s = pitcher_stats(db, row.away_sp_id) if row.away_sp_id else _sp_default
 
-    pf       = park_factor(row.home_team)
+    pf        = park_factor(row.home_team)
     game_date = row.game_date
     home_def  = team_defense_factor(db, row.home_team, game_date)
     away_def  = team_defense_factor(db, row.away_team, game_date)
     hfa       = team_hfa_factor(db, row.home_team)
+    home_rf   = team_run_factor(db, row.home_team, game_date, season)
+    away_rf   = team_run_factor(db, row.away_team, game_date, season)
 
     fv = compute_game_fair_value(
         home_lineup_woba=     row.home_lineup_woba or LEAGUE_AVG_WOBA,
@@ -459,6 +483,8 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
         home_defense_factor=  home_def,
         away_defense_factor=  away_def,
         home_hfa_factor=      hfa,
+        home_run_factor=      home_rf,
+        away_run_factor=      away_rf,
     )
 
     row.home_sp_proj_innings = fv["home_sp_proj_innings"]

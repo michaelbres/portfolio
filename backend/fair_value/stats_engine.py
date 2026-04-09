@@ -55,6 +55,12 @@ from .constants import (
     DEFENSE_FACTOR_FLOOR,
     DEFENSE_FACTOR_CAP,
     MIN_BIP_DEFENSE,
+    LEAGUE_AVG_RS_PER_GAME,
+    TEAM_RUN_FACTOR_FLOOR,
+    TEAM_RUN_FACTOR_CAP,
+    MIN_GAMES_RUN_FACTOR,
+    DEPTH_FRAGILITY_WOBA,
+    DEPTH_FRAGILITY_MULT,
 )
 
 log = logging.getLogger(__name__)
@@ -96,6 +102,16 @@ def _blend_xfip(full_xfip: Optional[float], full_ip: float,
 
 
 # ── xFIP computation ──────────────────────────────────────────────────────────
+
+def _xfip_from_api_stats(stats: dict) -> Optional[float]:
+    """Compute xFIP from MLB Stats API season counting stats."""
+    ip = stats.get("ip", 0)
+    if ip < 1.0:
+        return None
+    k, bb, hbp, fb = stats["k"], stats["bb"], stats["hbp"], stats["fb"]
+    raw = ((13.0 * fb * LG_HR_PER_FB) + (3.0 * (bb + hbp)) - (2.0 * k)) / ip + CFIP
+    return max(1.50, min(8.00, round(raw, 3)))
+
 
 def _compute_xfip(db: Session, pitcher_id: int,
                   game_pks: list[int]) -> dict:
@@ -255,6 +271,31 @@ def pitcher_stats(db: Session, pitcher_id: int) -> dict:
     xfip_recent = xfip_recent_d["xfip"]
     ip_full     = xfip_full_d["ip"]
     ip_recent   = xfip_recent_d["ip"]
+
+    # ── MLB API supplement when Statcast IP is thin ───────────────────────────
+    # Covers pitchers returning from injury (e.g. Glasnow) and rookies who
+    # have real current-season K/BB/FB data but not enough Statcast history
+    # to avoid heavy regression toward league average.
+    if ip_full < MIN_IP_PITCHER_FULL:
+        try:
+            from .mlb_api import get_pitcher_season_stats
+            api_s = get_pitcher_season_stats(pitcher_id,
+                                              __import__("datetime").date.today().year)
+            if api_s and api_s["ip"] >= 5.0:
+                xfip_api = _xfip_from_api_stats(api_s)
+                if xfip_api is not None:
+                    sc_ip  = ip_full or 0.0
+                    api_ip = api_s["ip"]
+                    if sc_ip > 0 and xfip_full is not None:
+                        # Pool Statcast + API weighted by innings
+                        xfip_full  = (sc_ip * xfip_full + api_ip * xfip_api) / (sc_ip + api_ip)
+                    else:
+                        xfip_full  = xfip_api
+                    ip_full = sc_ip + api_ip   # combined evidence
+                    log.debug("pitcher %s: Statcast %.0fIP + API %.0fIP → xFIP %.2f",
+                              pitcher_id, sc_ip, api_ip, xfip_full)
+        except Exception as exc:
+            log.debug("API supplement failed for pitcher %s: %s", pitcher_id, exc)
 
     return {
         "woba_full":          full_woba,
@@ -601,6 +642,14 @@ def team_bullpen_stats(db: Session, team: str, game_date: date) -> dict:
         for r in reliever_stats
     ) / total_weight
 
+    # ── Step 3: Depth & Fragility penalty ─────────────────────────────────────
+    # For teams with a structurally poor bullpen (raw wOBA > threshold, bottom
+    # ~25%), triple the individual fatigue penalties.  A tired bad bullpen is
+    # significantly worse than a tired average one; the linear model misses this.
+    if woba_raw > DEPTH_FRAGILITY_WOBA:
+        base_fatigue = woba_fatigued - woba_raw      # penalty portion only
+        woba_fatigued = woba_raw + base_fatigue * DEPTH_FRAGILITY_MULT
+
     return {
         "woba_raw":              round(woba_raw, 4),
         "woba_fatigued":         round(min(woba_fatigued, 0.420), 4),
@@ -732,6 +781,59 @@ def team_hfa_factor(db: Session, team: str) -> float:
 
     except Exception:
         return HOME_LAMBDA_FACTOR
+
+
+# ── Team run factor (top-down anchor) ────────────────────────────────────────
+
+def team_run_factor(db: Session, team: str, game_date: date, season: int) -> float:
+    """
+    Returns a multiplicative factor based on the team's actual RS/G this season
+    relative to the league average.
+
+    factor = (team_RS_per_game / LEAGUE_AVG_RS_PER_GAME), regressed toward 1.0
+    by sample size (full confidence at 81 games).
+
+    Applied in compute_lambda() as a 30% blend (TEAM_RUN_FACTOR_BLEND) so the
+    bottom-up model retains 70% weight but bad teams can't look artificially
+    competitive through noisy individual Statcast numbers.
+
+    Returns 1.0 when fewer than MIN_GAMES_RUN_FACTOR games have been played.
+    """
+    season_start = date(season, 3, 1)
+    try:
+        row = db.execute(text("""
+            SELECT
+                COUNT(DISTINCT game_pk)                                     AS games,
+                SUM(CASE WHEN home_team = :team THEN final_home
+                         ELSE final_away END)                               AS runs_scored
+            FROM (
+                SELECT game_pk, home_team, away_team,
+                       MAX(post_home_score) AS final_home,
+                       MAX(post_away_score) AS final_away
+                FROM statcast_pitches
+                WHERE (home_team = :team OR away_team = :team)
+                  AND game_date >= :season_start
+                  AND game_date  < :gd
+                  AND inning    >= 9
+                GROUP BY game_pk, home_team, away_team
+            ) t
+        """), {"team": team, "season_start": season_start, "gd": game_date}).fetchone()
+
+        games = int(row.games or 0)
+        if games < MIN_GAMES_RUN_FACTOR:
+            return 1.0
+
+        rs_per_game = float(row.runs_scored or 0) / games
+        raw_factor  = rs_per_game / LEAGUE_AVG_RS_PER_GAME
+
+        # Regress toward 1.0 based on sample (full confidence at 81 games)
+        weight = min(games, 81) / 81.0
+        factor = raw_factor * weight + 1.0 * (1.0 - weight)
+
+        return max(TEAM_RUN_FACTOR_FLOOR, min(TEAM_RUN_FACTOR_CAP, round(factor, 4)))
+
+    except Exception:
+        return 1.0
 
 
 # ── Umpire run factor ─────────────────────────────────────────────────────────
