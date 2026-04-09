@@ -64,8 +64,14 @@ export default function FairValue() {
       })
       if (data.games_computed > 0) {
         setLastRun(`Computed ${data.games_computed} game(s)`)
+      } else if (data.error && data.error.startsWith('All ')) {
+        // All games failed — surface as a real error
+        setError(data.error)
+      } else if (data.error && data.error.includes('failed')) {
+        // Some games failed — show as warning in lastRun
+        setLastRun(data.error)
       } else {
-        // "Already computed" and "no games" are informational, not errors
+        // "Already computed" or no games scheduled — informational
         setLastRun(data.error || 'No games found for this date.')
       }
     } catch (e) {

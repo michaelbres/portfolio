@@ -190,6 +190,7 @@ class FairValueGame(Base):
     home_sp_woba_season = Column(Float)
     home_sp_woba_recent = Column(Float)
     home_sp_woba_blended = Column(Float)
+    home_sp_xfip_blended = Column(Float)
     home_sp_pa_season = Column(Integer)
     home_sp_pa_recent = Column(Integer)
 
@@ -198,6 +199,7 @@ class FairValueGame(Base):
     away_sp_woba_season = Column(Float)
     away_sp_woba_recent = Column(Float)
     away_sp_woba_blended = Column(Float)
+    away_sp_xfip_blended = Column(Float)
     away_sp_pa_season = Column(Integer)
     away_sp_pa_recent = Column(Integer)
 
@@ -213,8 +215,9 @@ class FairValueGame(Base):
     home_lineup_source = Column(String(20))  # 'confirmed', 'projected', 'recent_avg'
     away_lineup_source = Column(String(20))
 
-    # Park
+    # Park + weather
     park_factor = Column(Float)
+    weather_carry_factor = Column(Float)
 
     # Model outputs
     home_lambda = Column(Float)            # expected runs, home team offense

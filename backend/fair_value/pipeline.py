@@ -174,6 +174,7 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
         pass   # market lines are optional
 
     results = []
+    failed_errors: list[str] = []
 
     for g in games:
         game_pk   = g["game_pk"]
@@ -191,10 +192,26 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
                 results.append(result)
         except Exception as exc:
             log.error("    Failed game %s: %s", game_pk, exc, exc_info=True)
+            failed_errors.append(f"{away_team}@{home_team}: {exc}")
 
-    db.commit()
-    log.info("Pipeline complete: %d games processed", len(results))
-    return {"games": results, "games_computed": len(results), "error": None}
+    try:
+        db.commit()
+    except Exception as exc:
+        log.error("Pipeline DB commit failed: %s", exc, exc_info=True)
+        db.rollback()
+        return {"games": [], "games_computed": 0,
+                "error": f"DB commit failed: {exc}"}
+
+    log.info("Pipeline complete: %d games processed, %d failed",
+             len(results), len(failed_errors))
+
+    error_msg = None
+    if failed_errors and not results:
+        error_msg = f"All {len(failed_errors)} games failed. First error: {failed_errors[0]}"
+    elif failed_errors:
+        error_msg = f"{len(failed_errors)} game(s) failed: {failed_errors[0]}"
+
+    return {"games": results, "games_computed": len(results), "error": error_msg}
 
 
 def _process_game(db: Session, game: dict,

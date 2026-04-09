@@ -1,11 +1,31 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from database import engine, Base
 from routers import mlb
 from routers import fair_value
 
+log = logging.getLogger(__name__)
+
 Base.metadata.create_all(bind=engine)
+
+# ── Column migrations (ADD IF NOT EXISTS for existing deployments) ─────────────
+# create_all only creates missing tables; use ALTER TABLE for new columns.
+_COLUMN_MIGRATIONS = [
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_sp_xfip_blended FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor FLOAT",
+]
+
+try:
+    with engine.connect() as conn:
+        for stmt in _COLUMN_MIGRATIONS:
+            conn.execute(text(stmt))
+        conn.commit()
+except Exception as exc:
+    log.warning("Column migration skipped: %s", exc)
 
 app = FastAPI(title="Portfolio API", version="1.0.0")
 
