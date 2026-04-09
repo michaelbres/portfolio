@@ -271,6 +271,7 @@ def _process_game(db: Session, game: dict,
 
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
+    season = game["game_date"].year
 
     # Team defense, HFA, umpire, run factors
     home_def = team_defense_factor(db, home_team, game["game_date"])
