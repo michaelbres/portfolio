@@ -127,6 +127,25 @@ class StatcastPitch(Base):
     )
 
 
+class StuffPlusScore(Base):
+    """Per-pitcher per-pitch-type Stuff+ scores, computed by the analytics module."""
+    __tablename__ = "stuff_plus_scores"
+
+    id          = Column(Integer, primary_key=True)
+    pitcher_id  = Column(Integer, index=True, nullable=False)
+    pitcher_name = Column(String(100))
+    pitch_type  = Column(String(10), nullable=False)
+    season      = Column(Integer, nullable=False, index=True)
+    n_pitches   = Column(Integer)
+    avg_stuff_plus = Column(Float)   # 100 = league avg for that pitch type
+    model_family = Column(String(5)) # FB, BB, OS
+    computed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("pitcher_id", "pitch_type", "season", name="uq_stuff_plus"),
+    )
+
+
 class DataFetchLog(Base):
     __tablename__ = "data_fetch_log"
 

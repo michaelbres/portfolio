@@ -28,6 +28,7 @@ from .constants import (
     DEFAULT_PITCH_LIMIT,
     LEAGUE_AVG_WOBA,
     LEAGUE_AVG_XFIP,
+    MARKET_BLEND_WEIGHT,
     park_factor,
 )
 from .mlb_api import (
@@ -57,7 +58,7 @@ from .win_probability import (
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "2.1"
+MODEL_VERSION = "2.2"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -173,6 +174,7 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
         pass   # market lines are optional
 
     results = []
+    failed_errors: list[str] = []
 
     for g in games:
         game_pk   = g["game_pk"]
@@ -190,10 +192,26 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
                 results.append(result)
         except Exception as exc:
             log.error("    Failed game %s: %s", game_pk, exc, exc_info=True)
+            failed_errors.append(f"{away_team}@{home_team}: {exc}")
 
-    db.commit()
-    log.info("Pipeline complete: %d games processed", len(results))
-    return {"games": results, "games_computed": len(results), "error": None}
+    try:
+        db.commit()
+    except Exception as exc:
+        log.error("Pipeline DB commit failed: %s", exc, exc_info=True)
+        db.rollback()
+        return {"games": [], "games_computed": 0,
+                "error": f"DB commit failed: {exc}"}
+
+    log.info("Pipeline complete: %d games processed, %d failed",
+             len(results), len(failed_errors))
+
+    error_msg = None
+    if failed_errors and not results:
+        error_msg = f"All {len(failed_errors)} games failed. First error: {failed_errors[0]}"
+    elif failed_errors:
+        error_msg = f"{len(failed_errors)} game(s) failed: {failed_errors[0]}"
+
+    return {"games": results, "games_computed": len(results), "error": error_msg}
 
 
 def _process_game(db: Session, game: dict,
@@ -253,6 +271,7 @@ def _process_game(db: Session, game: dict,
 
     # ── Win probability ───────────────────────────────────────────────────────
     pf = park_factor(home_team)
+    season = game["game_date"].year
 
     # Team defense, HFA, umpire, run factors
     home_def = team_defense_factor(db, home_team, game["game_date"])
@@ -309,9 +328,19 @@ def _process_game(db: Session, game: dict,
                 market_source    = "kalshi"
             break
 
-    # ── Apply Platt scaling (no market blend — market is comparison only) ─────
+    # ── Apply Platt scaling ───────────────────────────────────────────────────
     raw_home_wp   = fv["home_win_prob"]
     final_home_wp = calibrated_prob(raw_prob=raw_home_wp)
+
+    # ── Step 5: Market calibration blend ─────────────────────────────────────
+    # When a sharp market probability is available (Kalshi), blend it in at
+    # MARKET_BLEND_WEIGHT (30%).  This captures information — injury news,
+    # travel fatigue, late lineup changes — not present in our Statcast model.
+    if market_home_prob is not None and MARKET_BLEND_WEIGHT > 0:
+        final_home_wp = (
+            (1.0 - MARKET_BLEND_WEIGHT) * final_home_wp
+            + MARKET_BLEND_WEIGHT * market_home_prob
+        )
     final_away_wp = 1.0 - final_home_wp
 
     from .win_probability import prob_to_american

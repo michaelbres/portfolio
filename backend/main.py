@@ -1,30 +1,32 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from database import engine, Base
 from routers import mlb
 from routers import fair_value
 
+log = logging.getLogger(__name__)
 
-def _run_migrations():
-    """
-    Additive schema migrations — safe to run on every startup.
-    Only adds columns/tables that don't exist yet; never drops or alters.
-    """
-    from sqlalchemy import text
-    stmts = [
-        # v2.0 — xFIP and weather carry factor
-        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_sp_xfip_blended FLOAT",
-        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
-        "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor  FLOAT",
-    ]
-    with engine.begin() as conn:
-        for sql in stmts:
-            conn.execute(text(sql))
+Base.metadata.create_all(bind=engine)
 
+# ── Column migrations (ADD IF NOT EXISTS for existing deployments) ─────────────
+# create_all only creates missing tables; use ALTER TABLE for new columns.
+_COLUMN_MIGRATIONS = [
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_sp_xfip_blended FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor FLOAT",
+    "ALTER TABLE statcast_pitches ADD COLUMN IF NOT EXISTS batter_name VARCHAR(100)",
+]
 
-Base.metadata.create_all(bind=engine)   # creates new tables (fair_value_calibration etc.)
-_run_migrations()                        # adds new columns to existing tables
+try:
+    with engine.connect() as conn:
+        for stmt in _COLUMN_MIGRATIONS:
+            conn.execute(text(stmt))
+        conn.commit()
+except Exception as exc:
+    log.warning("Column migration skipped: %s", exc)
 
 app = FastAPI(title="Portfolio API", version="1.0.0")
 

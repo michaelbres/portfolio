@@ -95,9 +95,34 @@ FATIGUE_TWO_DAYS_AGO = 0.008
 # bad teams from looking artificially competitive via bottom-up stats alone.
 LEAGUE_AVG_RS_PER_GAME  = 4.51   # matches LEAGUE_AVG_RUNS_PER_GAME
 TEAM_RUN_FACTOR_BLEND   = 0.30   # 30% top-down, 70% bottom-up
-TEAM_RUN_FACTOR_FLOOR   = 0.82   # ~3.7 RS/G team  (very bad)
-TEAM_RUN_FACTOR_CAP     = 1.18   # ~5.3 RS/G team  (very good)
+TEAM_RUN_FACTOR_FLOOR   = 0.76   # widened from 0.82 — allows NL stretch for bad teams
+TEAM_RUN_FACTOR_CAP     = 1.24   # widened from 1.18 — allows NL stretch for good teams
 MIN_GAMES_RUN_FACTOR    = 10     # need at least 10 games before applying
+
+# ── Non-linear Z-score weighting (Linearity Trap fix — Step 1) ────────────────
+# Offensive and suppression ratios beyond NONLINEAR_THRESHOLD standard deviations
+# from league average get amplified, so extreme teams have disproportionate impact.
+# sigma = typical SD of the ratio metric (SD_raw / league_avg_raw).
+OFFENSE_RATIO_SIGMA     = 0.065   # SD(wOBA) ≈ 0.021 / LEAGUE_AVG_WOBA 0.317
+XFIP_RATIO_SIGMA        = 0.094   # SD(xFIP) ≈ 0.40  / LEAGUE_AVG_XFIP  4.26
+NONLINEAR_THRESHOLD     = 2.0     # |z| beyond which amplification kicks in
+NONLINEAR_AMP           = 0.50    # fractional extra amplification per excess SD unit
+
+# ── Fat-tail win probability (Cauchy blend — Step 2) ──────────────────────────
+# Blends a Cauchy-CDF win probability (heavier tails than NegBin alone) to
+# prevent over-confidence and honour real-world run-scoring variance.
+CAUCHY_BLEND_WEIGHT     = 0.25    # 25% Cauchy + 75% NegBin
+
+# ── Depth & Fragility penalty (Step 3) ────────────────────────────────────────
+# Teams whose raw bullpen wOBA exceeds the threshold are in the bottom ~25%.
+# For these teams the individual reliever fatigue penalties are multiplied.
+DEPTH_FRAGILITY_WOBA    = 0.335   # raw bp wOBA above this → poor bullpen
+DEPTH_FRAGILITY_MULT    = 3.0     # triple fatigue penalty for poor-depth bullpens
+
+# ── Market calibration blend (Step 5) ─────────────────────────────────────────
+# When Kalshi (or other sharp) market probabilities are available, blend them
+# with the model to capture information not in the bottom-up stats.
+MARKET_BLEND_WEIGHT     = 0.30    # final = model × 0.70 + market × 0.30
 
 # Park run factors  (multiply expected runs by this value when game is at that park)
 PARK_FACTORS: dict[str, float] = {

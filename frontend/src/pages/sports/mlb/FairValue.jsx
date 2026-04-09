@@ -87,16 +87,22 @@ export default function FairValue() {
       })
       if (data.games_computed > 0) {
         setLastRun(`Computed ${data.games_computed} game(s)`)
-        await fetchGames(selectedDate)
-      } else if (data.error) {
+      } else if (data.error && data.error.startsWith('All ')) {
+        // All games failed — surface as a real error
         setError(data.error)
+      } else if (data.error && data.error.includes('failed')) {
+        // Some games failed — show as warning in lastRun
+        setLastRun(data.error)
       } else {
-        setError('No games found for this date.')
+        // "Already computed" or no games scheduled — informational
+        setLastRun(data.error || 'No games found for this date.')
       }
     } catch (e) {
       setError(e?.response?.data?.detail || 'Pipeline run failed. Check server logs.')
     } finally {
       setRunning(false)
+      // Always refresh game list — handles "already computed" case
+      fetchGames(selectedDate)
     }
   }
 

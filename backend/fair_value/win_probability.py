@@ -40,7 +40,56 @@ from .constants import (
     NEGBIN_DISPERSION,
     CALIBRATION_ALPHA,
     TEAM_RUN_FACTOR_BLEND,
+    OFFENSE_RATIO_SIGMA,
+    XFIP_RATIO_SIGMA,
+    NONLINEAR_THRESHOLD,
+    NONLINEAR_AMP,
+    CAUCHY_BLEND_WEIGHT,
 )
+
+
+# ── Non-linear Z-score weighting (Step 1) ────────────────────────────────────
+
+def _nonlinear_ratio(ratio: float, sigma: float) -> float:
+    """
+    Non-linear stretch for metric ratios beyond NONLINEAR_THRESHOLD standard
+    deviations from 1.0 (league average).
+
+    For |z| > threshold: excess SDs are amplified by (1 + NONLINEAR_AMP),
+    so extreme teams have a disproportionately larger impact on lambda.
+
+    Examples (sigma=0.065, threshold=2.0, amp=0.50):
+      ratio=0.789 (z=-3.25) → 0.748  (bad lineup penalised more)
+      ratio=1.199 (z=+3.06) → 1.232  (great lineup rewarded more)
+      ratio=1.0   (z=0)     → 1.0    (unchanged)
+    """
+    z = (ratio - 1.0) / sigma
+    if abs(z) <= NONLINEAR_THRESHOLD:
+        return ratio
+    excess   = abs(z) - NONLINEAR_THRESHOLD
+    new_z    = abs(z) + excess * NONLINEAR_AMP
+    delta    = new_z * sigma
+    return 1.0 + delta if ratio >= 1.0 else 1.0 - delta
+
+
+# ── Cauchy fat-tail win probability (Step 2) ──────────────────────────────────
+
+def _cauchy_win_prob(lambda_home: float, lambda_away: float,
+                     r: float = NEGBIN_DISPERSION) -> float:
+    """
+    P(home wins) via Cauchy CDF: P = 0.5 + arctan(diff / scale) / π.
+
+    Heavier tails than NegBin → explicitly models real-world run-scoring
+    uncertainty; slightly reduces over-confidence in large-lambda-gap games.
+
+    Scale is the square root of the combined NegBin variance, scaled by 0.45
+    to keep the Cauchy win probabilities in a sensible range.
+    """
+    diff  = lambda_home - lambda_away
+    var_h = lambda_home + lambda_home * lambda_home / r
+    var_a = lambda_away + lambda_away * lambda_away / r
+    scale = max(0.1, (var_h + var_a) ** 0.5 * 0.45)
+    return 0.5 + math.atan(diff / scale) / math.pi
 
 
 # ── Negative Binomial PMF ─────────────────────────────────────────────────────
@@ -118,13 +167,19 @@ def compute_lambda(
     sp_innings = max(0.0, min(sp_innings, 9.0))
     bp_innings = max(0.0, 9.0 - sp_innings)
 
-    # Offensive quality relative to league average
-    offense_factor = lineup_woba / LEAGUE_AVG_WOBA
+    # Offensive quality — non-linear Z-score stretch for extreme lineups (Step 1)
+    offense_factor = _nonlinear_ratio(
+        lineup_woba / LEAGUE_AVG_WOBA,
+        sigma=OFFENSE_RATIO_SIGMA,
+    )
 
-    # SP suppression via xFIP (normalised to league average xFIP)
-    sp_suppression = max(sp_xfip, 1.50) / LEAGUE_AVG_XFIP
+    # SP suppression — non-linear stretch for elite / terrible starters (Step 1)
+    sp_suppression = _nonlinear_ratio(
+        max(sp_xfip, 1.50) / LEAGUE_AVG_XFIP,
+        sigma=XFIP_RATIO_SIGMA,
+    )
 
-    # Bullpen suppression via wOBA (same as before — xFIP less reliable for relief)
+    # Bullpen suppression via wOBA (xFIP less reliable for relief)
     bp_suppression = max(bp_woba_allowed, 0.200) / LEAGUE_AVG_WOBA
 
     # Expected runs per segment
@@ -171,8 +226,12 @@ def calibrate_prob(p: float, alpha: float = CALIBRATION_ALPHA) -> float:
 def win_probability(lambda_home: float, lambda_away: float,
                     r: float = NEGBIN_DISPERSION) -> float:
     """
-    Return P(home team wins) using the Negative Binomial model.
-    Ties go to extra innings; home team wins extras at EXTRAS_HOME_WIN_RATE.
+    Return P(home team wins) as a blend of NegBin convolution (75%) and
+    Cauchy CDF (25%).
+
+    The Cauchy component introduces fat-tail behaviour — it explicitly models
+    the real-world uncertainty that the NegBin under-represents, preventing
+    over-confidence on large lambda differentials (Step 2).
     """
     home_pmf = _build_pmf(lambda_home, r=r)
     away_pmf = _build_pmf(lambda_away, r=r)
@@ -188,8 +247,13 @@ def win_probability(lambda_home: float, lambda_away: float,
             elif h == a:
                 p_tie += p
 
-    p_home_wins += p_tie * EXTRAS_HOME_WIN_RATE
-    return p_home_wins
+    p_negbin = p_home_wins + p_tie * EXTRAS_HOME_WIN_RATE
+
+    if CAUCHY_BLEND_WEIGHT > 0:
+        p_cauchy = _cauchy_win_prob(lambda_home, lambda_away, r=r)
+        return (1.0 - CAUCHY_BLEND_WEIGHT) * p_negbin + CAUCHY_BLEND_WEIGHT * p_cauchy
+
+    return p_negbin
 
 
 # ── Odds conversion ───────────────────────────────────────────────────────────
