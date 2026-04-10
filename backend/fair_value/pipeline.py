@@ -49,6 +49,8 @@ from .stats_engine import (
     team_hfa_factor,
     team_run_factor,
     umpire_run_factor,
+    is_opener_game,
+    opener_composite_value,
 )
 # stats_engine functions are all cross-season now; no season arg needed
 from .win_probability import (
@@ -58,7 +60,7 @@ from .win_probability import (
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "2.2"
+MODEL_VERSION = "2.3"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -254,6 +256,28 @@ def _process_game(db: Session, game: dict,
     else:
         away_pitch_limit = _default_pitch_limit(away_sp_s)
 
+    # ── Opener detection ──────────────────────────────────────────────────────
+    # When a team is using an opener strategy, replace the 2-segment SP/BP model
+    # with a 3-segment Opener/Bulk/ResidualBP composite pitching value.
+    home_cpv: Optional[dict] = None
+    away_cpv: Optional[dict] = None
+
+    if home_sp_id and is_opener_game(home_sp_s, home_pitch_limit):
+        home_cpv = opener_composite_value(
+            db, home_sp_s, home_pitch_limit, home_team, game["game_date"]
+        )
+        log.info("  %s opener detected: opener_xfip=%.2f (%.1f inn) bulk_xfip=%.2f (%.1f inn)",
+                 home_team, home_cpv["opener_xfip"], home_cpv["opener_innings"],
+                 home_cpv["bulk_xfip"],  home_cpv["bulk_innings"])
+
+    if away_sp_id and is_opener_game(away_sp_s, away_pitch_limit):
+        away_cpv = opener_composite_value(
+            db, away_sp_s, away_pitch_limit, away_team, game["game_date"]
+        )
+        log.info("  %s opener detected: opener_xfip=%.2f (%.1f inn) bulk_xfip=%.2f (%.1f inn)",
+                 away_team, away_cpv["opener_xfip"], away_cpv["opener_innings"],
+                 away_cpv["bulk_xfip"],  away_cpv["bulk_innings"])
+
     # ── Bullpen stats ─────────────────────────────────────────────────────────
     home_bp = team_bullpen_stats(db, home_team, game["game_date"])
     away_bp = team_bullpen_stats(db, away_team, game["game_date"])
@@ -303,6 +327,15 @@ def _process_game(db: Session, game: dict,
         umpire_factor=        umpire,
         home_run_factor=      home_rf,
         away_run_factor=      away_rf,
+        # Opener scenario (None when standard starter)
+        home_opener_xfip=     home_cpv["opener_xfip"]    if home_cpv else None,
+        home_opener_inn=      home_cpv["opener_innings"]  if home_cpv else None,
+        home_bulk_xfip=       home_cpv["bulk_xfip"]       if home_cpv else None,
+        home_bulk_inn=        home_cpv["bulk_innings"]     if home_cpv else None,
+        away_opener_xfip=     away_cpv["opener_xfip"]    if away_cpv else None,
+        away_opener_inn=      away_cpv["opener_innings"]  if away_cpv else None,
+        away_bulk_xfip=       away_cpv["bulk_xfip"]       if away_cpv else None,
+        away_bulk_inn=        away_cpv["bulk_innings"]     if away_cpv else None,
     )
 
     # Market implied probability (no-vig) for Bayesian blend

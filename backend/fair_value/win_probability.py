@@ -256,6 +256,101 @@ def win_probability(lambda_home: float, lambda_away: float,
     return p_negbin
 
 
+# ── Three-segment lambda (Opener / Bulk / Residual BP) ───────────────────────
+
+def compute_lambda_opener(
+    lineup_woba:     float,
+    opener_xfip:     float,
+    opener_innings:  float,
+    bulk_xfip:       float,
+    bulk_innings:    float,
+    bp_woba_allowed: float,
+    park_factor:     float,
+    is_home:         bool,
+    defense_factor:  float = 1.0,
+    hfa_factor:      Optional[float] = None,
+    umpire_factor:   float = 1.0,
+    team_run_factor: float = 1.0,
+) -> float:
+    """
+    Three-segment λ for an Opener / Bulk pitcher / Residual bullpen strategy.
+
+    Formula (LaTeX)
+    ---------------
+    λ = R_{inn} · f_{off} · \\bigl[
+            f_{opr}  · IP_{opr}  +
+            f_{bulk} · IP_{bulk} +
+            f_{bp}   · IP_{rem}
+        \\bigr] · f_{def} · f_{park} · f_{ump} · f_{hfa} · f_{top-down}
+
+    where
+      IP_{rem}   = 9 − IP_{opr} − IP_{bulk}
+      f_{off}    = g(wOBA_{lineup} / wOBA_{LG})      non-linear offense ratio
+      f_{opr}    = g(xFIP_{opr}   / xFIP_{LG})      non-linear opener suppression
+      f_{bulk}   = g(xFIP_{bulk}  / xFIP_{LG})      non-linear bulk suppression
+      f_{bp}     = wOBA_{bp} / wOBA_{LG}             linear residual BP suppression
+      g(·)       = _nonlinear_ratio() (Step-1 Z-score amplification)
+    """
+    opener_innings = max(0.0, min(opener_innings, 9.0))
+    bulk_innings   = max(0.0, min(bulk_innings, 9.0 - opener_innings))
+    bp_innings     = max(0.0, 9.0 - opener_innings - bulk_innings)
+
+    offense_factor = _nonlinear_ratio(
+        lineup_woba / LEAGUE_AVG_WOBA, sigma=OFFENSE_RATIO_SIGMA)
+    opener_supp    = _nonlinear_ratio(
+        max(opener_xfip, 1.50) / LEAGUE_AVG_XFIP, sigma=XFIP_RATIO_SIGMA)
+    bulk_supp      = _nonlinear_ratio(
+        max(bulk_xfip, 1.50) / LEAGUE_AVG_XFIP, sigma=XFIP_RATIO_SIGMA)
+    bp_supp        = max(bp_woba_allowed, 0.200) / LEAGUE_AVG_WOBA
+
+    runs = RUNS_PER_INNING * offense_factor * (
+        opener_supp * opener_innings
+        + bulk_supp * bulk_innings
+        + bp_supp   * bp_innings
+    )
+
+    lam = runs * defense_factor * park_factor * umpire_factor
+
+    if hfa_factor is None:
+        hfa_factor = HOME_LAMBDA_FACTOR
+    lam *= hfa_factor if is_home else (1.0 / hfa_factor)
+    lam *= (1.0 - TEAM_RUN_FACTOR_BLEND + TEAM_RUN_FACTOR_BLEND * team_run_factor)
+
+    return max(lam, 0.5)
+
+
+def composite_pitching_value(
+    opener_xfip:    float,
+    opener_innings: float,
+    bulk_xfip:      float,
+    bulk_innings:   float,
+    bp_woba:        float,
+) -> float:
+    """
+    Weighted Composite Pitching Value (CPV) — an ERA-scale reference metric.
+
+    Formula (LaTeX)
+    ---------------
+    CPV = \\frac{
+        IP_{opr} · xFIP_{opr} +
+        IP_{bulk} · xFIP_{bulk} +
+        IP_{rem}  · \\overline{xFIP}_{bp}
+    }{9}
+
+    where  \\overline{xFIP}_{bp} = wOBA_{bp} × (xFIP_{LG} / wOBA_{LG})
+
+    Used for logging/display; not fed back into lambda computation.
+    """
+    bp_innings    = max(0.0, 9.0 - opener_innings - bulk_innings)
+    xfip_bp_equiv = bp_woba * (LEAGUE_AVG_XFIP / LEAGUE_AVG_WOBA)
+    return round(
+        (opener_xfip    * opener_innings
+         + bulk_xfip    * bulk_innings
+         + xfip_bp_equiv * bp_innings) / 9.0,
+        3,
+    )
+
+
 # ── Odds conversion ───────────────────────────────────────────────────────────
 
 def prob_to_american(p: float) -> int:
@@ -307,6 +402,17 @@ def compute_game_fair_value(
     calibration_alpha:    float = CALIBRATION_ALPHA,
     home_run_factor:      float = 1.0,
     away_run_factor:      float = 1.0,
+    # Opener scenario — set when is_opener_game() returns True.
+    # home_opener_* describes the HOME team's pitching staff → affects lambda_away.
+    # away_opener_* describes the AWAY team's pitching staff → affects lambda_home.
+    home_opener_xfip:     Optional[float] = None,
+    home_opener_inn:      Optional[float] = None,
+    home_bulk_xfip:       Optional[float] = None,
+    home_bulk_inn:        Optional[float] = None,
+    away_opener_xfip:     Optional[float] = None,
+    away_opener_inn:      Optional[float] = None,
+    away_bulk_xfip:       Optional[float] = None,
+    away_bulk_inn:        Optional[float] = None,
 ) -> dict:
     """
     Top-level function: compute all model outputs for one game.
@@ -324,33 +430,65 @@ def compute_game_fair_value(
     home_sp_inn = projected_innings(home_pitch_limit, home_pitches_per_inn)
     away_sp_inn = projected_innings(away_pitch_limit, away_pitches_per_inn)
 
-    # Home offense faces away SP + away BP + away defense
-    lambda_home = compute_lambda(
-        lineup_woba=     home_lineup_woba,
-        sp_xfip=         away_sp_xfip,
-        sp_innings=      away_sp_inn,
-        bp_woba_allowed= away_bp_woba,
-        park_factor=     park_factor_val,
-        is_home=         True,
-        defense_factor=  away_defense_factor,
-        hfa_factor=      home_hfa_factor,
-        umpire_factor=   umpire_factor,
-        team_run_factor= home_run_factor,
-    )
+    # Home offense faces the AWAY team's pitching staff
+    if away_opener_xfip is not None:
+        lambda_home = compute_lambda_opener(
+            lineup_woba=     home_lineup_woba,
+            opener_xfip=     away_opener_xfip,
+            opener_innings=  away_opener_inn,
+            bulk_xfip=       away_bulk_xfip,
+            bulk_innings=    away_bulk_inn,
+            bp_woba_allowed= away_bp_woba,
+            park_factor=     park_factor_val,
+            is_home=         True,
+            defense_factor=  away_defense_factor,
+            hfa_factor=      home_hfa_factor,
+            umpire_factor=   umpire_factor,
+            team_run_factor= home_run_factor,
+        )
+    else:
+        lambda_home = compute_lambda(
+            lineup_woba=     home_lineup_woba,
+            sp_xfip=         away_sp_xfip,
+            sp_innings=      away_sp_inn,
+            bp_woba_allowed= away_bp_woba,
+            park_factor=     park_factor_val,
+            is_home=         True,
+            defense_factor=  away_defense_factor,
+            hfa_factor=      home_hfa_factor,
+            umpire_factor=   umpire_factor,
+            team_run_factor= home_run_factor,
+        )
 
-    # Away offense faces home SP + home BP + home defense
-    lambda_away = compute_lambda(
-        lineup_woba=     away_lineup_woba,
-        sp_xfip=         home_sp_xfip,
-        sp_innings=      home_sp_inn,
-        bp_woba_allowed= home_bp_woba,
-        park_factor=     park_factor_val,
-        is_home=         False,
-        defense_factor=  home_defense_factor,
-        hfa_factor=      home_hfa_factor,
-        umpire_factor=   umpire_factor,
-        team_run_factor= away_run_factor,
-    )
+    # Away offense faces the HOME team's pitching staff
+    if home_opener_xfip is not None:
+        lambda_away = compute_lambda_opener(
+            lineup_woba=     away_lineup_woba,
+            opener_xfip=     home_opener_xfip,
+            opener_innings=  home_opener_inn,
+            bulk_xfip=       home_bulk_xfip,
+            bulk_innings=    home_bulk_inn,
+            bp_woba_allowed= home_bp_woba,
+            park_factor=     park_factor_val,
+            is_home=         False,
+            defense_factor=  home_defense_factor,
+            hfa_factor=      home_hfa_factor,
+            umpire_factor=   umpire_factor,
+            team_run_factor= away_run_factor,
+        )
+    else:
+        lambda_away = compute_lambda(
+            lineup_woba=     away_lineup_woba,
+            sp_xfip=         home_sp_xfip,
+            sp_innings=      home_sp_inn,
+            bp_woba_allowed= home_bp_woba,
+            park_factor=     park_factor_val,
+            is_home=         False,
+            defense_factor=  home_defense_factor,
+            hfa_factor=      home_hfa_factor,
+            umpire_factor=   umpire_factor,
+            team_run_factor= away_run_factor,
+        )
 
     home_wp_raw = win_probability(lambda_home, lambda_away)
     home_wp     = calibrate_prob(home_wp_raw, calibration_alpha)

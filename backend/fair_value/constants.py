@@ -124,6 +124,37 @@ DEPTH_FRAGILITY_MULT    = 3.0     # triple fatigue penalty for poor-depth bullpe
 # with the model to capture information not in the bottom-up stats.
 MARKET_BLEND_WEIGHT     = 0.30    # final = model × 0.70 + market × 0.30
 
+# ── Stuff+ Bayesian prior ─────────────────────────────────────────────────────
+# Regresses observed xFIP toward a Stuff+-anchored prior instead of raw league
+# average.  Physical pitch metrics (velocity, break, release) stabilise faster
+# than outcome stats — credibility point is 30 IP vs 80 IP for raw xFIP.
+#
+# xFIP_prior = LEAGUE_AVG_XFIP - SENSITIVITY × (S⁺ − 100) / 10
+# posterior  = (IP / (IP + k)) × xFIP_obs  +  (k / (IP + k)) × xFIP_prior
+#
+# Example: pitcher with S⁺ = 115, 25 IP, observed xFIP 3.40
+#   prior        = 4.26 − 0.20 × 15/10  = 3.96
+#   credibility  = 25 / (25 + 30)       = 0.455
+#   posterior    = 0.455 × 3.40 + 0.545 × 3.96 = 3.70   (vs naive 3.83)
+STUFF_PLUS_XFIP_SENSITIVITY = 0.20   # xFIP units per 10 Stuff+ points from avg (100)
+STUFF_PLUS_CREDIBILITY_IP   = 30.0   # IP at which prior and evidence share equal weight
+STUFF_PLUS_FB_WEIGHT        = 1.5    # fastball family weighted more — drives run prevention
+STUFF_PLUS_BB_WEIGHT        = 1.0    # breaking ball weight
+STUFF_PLUS_OS_WEIGHT        = 1.0    # off-speed weight
+
+# ── Opener / Bulk-Reliever strategy ───────────────────────────────────────────
+# When the designated SP is projected to pitch < OPENER_IP_THRESHOLD innings,
+# the model switches to a 3-segment pitching staff computation:
+#   Segment 1 – Opener      : identified SP, short stint (≤ TYPICAL_OPENER_INNINGS)
+#   Segment 2 – Bulk pitcher : highest avg-innings reliever (enters inn 2–5)
+#   Segment 3 – Residual BP : remaining team bullpen (wOBA-based, fatigued)
+OPENER_IP_THRESHOLD    = 2.5   # projected SP innings below this → opener scenario
+TYPICAL_OPENER_INNINGS = 1.5   # default opener IP when specific data unavailable
+TYPICAL_BULK_INNINGS   = 5.0   # default bulk pitcher IP
+BULK_ENTRY_INNING_MAX  = 5     # bulk pitchers must enter by this inning historically
+BULK_MIN_INNINGS       = 3.0   # avg innings/appearance to qualify as bulk pitcher
+MIN_BULK_APPEARANCES   = 3     # minimum appearances required to ID a bulk pitcher
+
 # Park run factors  (multiply expected runs by this value when game is at that park)
 PARK_FACTORS: dict[str, float] = {
     "COL": 1.19,   # Coors Field

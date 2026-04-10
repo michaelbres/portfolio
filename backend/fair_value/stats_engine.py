@@ -61,6 +61,17 @@ from .constants import (
     MIN_GAMES_RUN_FACTOR,
     DEPTH_FRAGILITY_WOBA,
     DEPTH_FRAGILITY_MULT,
+    STUFF_PLUS_XFIP_SENSITIVITY,
+    STUFF_PLUS_CREDIBILITY_IP,
+    STUFF_PLUS_FB_WEIGHT,
+    STUFF_PLUS_BB_WEIGHT,
+    STUFF_PLUS_OS_WEIGHT,
+    OPENER_IP_THRESHOLD,
+    TYPICAL_OPENER_INNINGS,
+    TYPICAL_BULK_INNINGS,
+    BULK_ENTRY_INNING_MAX,
+    BULK_MIN_INNINGS,
+    MIN_BULK_APPEARANCES,
 )
 
 log = logging.getLogger(__name__)
@@ -320,6 +331,24 @@ def _pitcher_stats_impl(db: Session, pitcher_id: int) -> dict:
         except Exception as exc:
             log.debug("API supplement failed for pitcher %s: %s", pitcher_id, exc)
 
+    # ── Bayesian xFIP with Stuff+ prior ──────────────────────────────────────
+    # Pull Stuff+ for this pitcher's current season.  When data exists, anchor
+    # the prior to their physical pitch quality instead of raw league average —
+    # Stuff+ stabilises at ≈30 IP, far earlier than xFIP (≈80 IP).
+    stuff_prior = stuff_plus_xfip_prior(db, pitcher_id, date.today().year)
+
+    if stuff_prior is not None:
+        # Apply Bayesian credibility independently to full and recent samples,
+        # then 50/50 blend to preserve trend-awareness (mirrors _blend_xfip).
+        bayes_full   = bayesian_xfip_blend(xfip_full,   ip_full,   stuff_prior)
+        bayes_recent = bayesian_xfip_blend(xfip_recent, ip_recent, stuff_prior)
+        xfip_blended = round(0.5 * bayes_full + 0.5 * bayes_recent, 3)
+        log.debug("pitcher %s: Stuff+ prior=%.2f → Bayesian xFIP=%.2f (was %.2f)",
+                  pitcher_id, stuff_prior, xfip_blended,
+                  _blend_xfip(xfip_full, ip_full, xfip_recent, ip_recent))
+    else:
+        xfip_blended = _blend_xfip(xfip_full, ip_full, xfip_recent, ip_recent)
+
     return {
         "woba_full":          full_woba,
         "pa_full":            full_pa,
@@ -331,8 +360,7 @@ def _pitcher_stats_impl(db: Session, pitcher_id: int) -> dict:
                                      MIN_PA_PITCHER_RECENT),
         "xfip_full":          xfip_full,
         "xfip_recent":        xfip_recent,
-        "xfip_blended":       _blend_xfip(xfip_full,   ip_full,
-                                           xfip_recent, ip_recent),
+        "xfip_blended":       xfip_blended,
         "ip_full":            ip_full,
         "ip_recent":          ip_recent,
         "pitches_per_inning": round(ppi, 2),
@@ -706,6 +734,219 @@ def _team_bullpen_stats_impl(db: Session, team: str, game_date: date) -> dict:
         "woba_fatigued":         round(min(woba_fatigued, 0.420), 4),
         "total_72h_pitches":     total_72h_pitches,
         "n_relievers":           len(reliever_stats),
+    }
+
+
+# ── Stuff+ Bayesian prior ─────────────────────────────────────────────────────
+
+def stuff_plus_xfip_prior(db: Session, pitcher_id: int, season: int) -> Optional[float]:
+    """
+    Derive an xFIP prior from a pitcher's Stuff+ scores for *season*.
+
+    Aggregates per-pitch-type Stuff+ scores with family weights (fastballs
+    count 1.5× because velocity/spin on FB drives run prevention most).
+
+    Formula
+    -------
+    S⁺_wtd   = Σ(n_pitches × w_family × avg_stuff_plus) / Σ(n_pitches × w_family)
+    xFIP_prior = LEAGUE_AVG_XFIP − SENSITIVITY × (S⁺_wtd − 100) / 10
+
+    Returns None if no Stuff+ data exists for this pitcher/season.
+    """
+    try:
+        rows = db.execute(text("""
+            SELECT model_family, avg_stuff_plus, n_pitches
+            FROM stuff_plus_scores
+            WHERE pitcher_id = :pid AND season = :season
+              AND avg_stuff_plus IS NOT NULL AND n_pitches > 0
+        """), {"pid": pitcher_id, "season": season}).fetchall()
+
+        if not rows:
+            return None
+
+        _fw = {"FB": STUFF_PLUS_FB_WEIGHT,
+               "BB": STUFF_PLUS_BB_WEIGHT,
+               "OS": STUFF_PLUS_OS_WEIGHT}
+
+        total_w = 0.0
+        wtd_sum = 0.0
+        for row in rows:
+            w = float(row.n_pitches) * _fw.get(row.model_family or "", 1.0)
+            wtd_sum += float(row.avg_stuff_plus) * w
+            total_w += w
+
+        if total_w == 0:
+            return None
+
+        s_plus = wtd_sum / total_w
+        prior  = LEAGUE_AVG_XFIP - STUFF_PLUS_XFIP_SENSITIVITY * (s_plus - 100.0) / 10.0
+        return float(max(2.00, min(6.50, round(prior, 3))))
+
+    except Exception:
+        return None
+
+
+def bayesian_xfip_blend(
+    observed_xfip: Optional[float],
+    observed_ip:   float,
+    stuff_prior:   Optional[float],
+) -> float:
+    """
+    Bayesian credibility blend of observed xFIP with a Stuff⁺-derived prior.
+
+    Formula (credibility theory)
+    ----------------------------
+    credibility = IP / (IP + k)           k = STUFF_PLUS_CREDIBILITY_IP (30 IP)
+    posterior   = credibility × xFIP_obs + (1 − credibility) × xFIP_prior
+
+    Stuff+ stabilises at ≈30 IP (physical metrics are stable properties of a
+    pitcher's arsenal), so we trust it earlier than a naive regression toward
+    league average — particularly useful for rookies and injury returnees.
+
+    Falls back to LEAGUE_AVG_XFIP when no Stuff+ prior is available.
+    """
+    prior = stuff_prior if stuff_prior is not None else LEAGUE_AVG_XFIP
+    if observed_xfip is None or observed_ip <= 0:
+        return prior
+    credibility = observed_ip / (observed_ip + STUFF_PLUS_CREDIBILITY_IP)
+    return float(round(credibility * observed_xfip + (1.0 - credibility) * prior, 3))
+
+
+# ── Opener / Bulk strategy helpers ────────────────────────────────────────────
+
+def is_opener_game(sp_stats: dict, pitch_limit: int) -> bool:
+    """
+    Return True when the scheduled pitcher is being used as an opener.
+
+    Triggers on EITHER:
+      1. Projected innings (pitch_limit / pitches_per_inning) < OPENER_IP_THRESHOLD
+      2. Historical avg innings per outing < OPENER_IP_THRESHOLD
+         (pitcher's recent role has been short-stint relief)
+    """
+    ppi          = sp_stats.get("pitches_per_inning") or 15.5
+    proj_innings = pitch_limit / ppi
+    if proj_innings < OPENER_IP_THRESHOLD:
+        return True
+
+    total_starts = sp_stats.get("total_starts") or 0
+    ip_full      = sp_stats.get("ip_full")      or 0.0
+    if total_starts > 0 and ip_full > 0:
+        if (ip_full / total_starts) < OPENER_IP_THRESHOLD:
+            return True
+
+    return False
+
+
+def _identify_bulk_reliever(db: Session, team: str, game_date: date) -> Optional[dict]:
+    """
+    Find the probable bulk pitcher for an opener-strategy game.
+
+    A bulk pitcher:
+      - Enters between innings 2 and BULK_ENTRY_INNING_MAX historically
+      - Averages ≥ BULK_MIN_INNINGS per appearance
+      - Has ≥ MIN_BULK_APPEARANCES in the last BULLPEN_SAMPLE_GAMES
+
+    Returns pitcher_stats() dict for the best candidate, or None.
+    """
+    try:
+        team_games = db.execute(text("""
+            SELECT DISTINCT game_pk
+            FROM statcast_pitches
+            WHERE (home_team = :team OR away_team = :team)
+              AND game_date < :gd
+            ORDER BY game_pk DESC
+            LIMIT :n
+        """), {"team": team, "gd": game_date, "n": BULLPEN_SAMPLE_GAMES}).fetchall()
+
+        if not team_games:
+            return None
+
+        pk_list = ", ".join(str(r.game_pk) for r in team_games)
+
+        bulk = db.execute(text(f"""
+            SELECT
+                pitcher,
+                COUNT(DISTINCT game_pk)        AS appearances,
+                AVG(innings_pitched)           AS avg_innings,
+                AVG(first_inning)              AS avg_entry
+            FROM (
+                SELECT pitcher, game_pk,
+                       MIN(inning)                   AS first_inning,
+                       MAX(inning) - MIN(inning) + 1 AS innings_pitched
+                FROM statcast_pitches
+                WHERE game_pk IN ({pk_list})
+                  AND (
+                      (inning_topbot = 'Top' AND away_team = :team)
+                      OR
+                      (inning_topbot = 'Bot' AND home_team = :team)
+                  )
+                GROUP BY pitcher, game_pk
+            ) app
+            GROUP BY pitcher
+            HAVING AVG(first_inning)    BETWEEN 2 AND :max_entry
+               AND AVG(innings_pitched) >= :min_inn
+               AND COUNT(DISTINCT game_pk) >= :min_app
+            ORDER BY AVG(innings_pitched) DESC
+            LIMIT 1
+        """), {
+            "team":      team,
+            "max_entry": BULK_ENTRY_INNING_MAX,
+            "min_inn":   BULK_MIN_INNINGS,
+            "min_app":   MIN_BULK_APPEARANCES,
+        }).fetchone()
+
+        if not bulk:
+            return None
+
+        return pitcher_stats(db, bulk.pitcher)
+
+    except Exception:
+        log.warning("_identify_bulk_reliever failed for team=%s", team)
+        return None
+
+
+def opener_composite_value(
+    db:                 Session,
+    opener_stats:       dict,
+    opener_pitch_limit: int,
+    team:               str,
+    game_date:          date,
+) -> dict:
+    """
+    Build the composite pitching value for an Opener/Bulk/BP strategy.
+
+    Three segments
+    --------------
+    1. Opener       — the identified short-stint pitcher (projected IP capped at
+                      TYPICAL_OPENER_INNINGS)
+    2. Bulk pitcher — highest avg-innings reliever entering inn 2–BULK_ENTRY_INNING_MAX
+                      (falls back to LEAGUE_AVG_XFIP when none identifiable)
+    3. Residual BP  — team_bullpen_stats() for remaining innings
+
+    Returns
+    -------
+    opener_xfip    float   Bayesian-blended xFIP of the opener
+    opener_innings float   projected opener IP
+    bulk_xfip      float   Bayesian-blended xFIP of the bulk pitcher
+    bulk_innings   float   projected bulk pitcher IP
+    bp_woba        float   fatigued wOBA for the residual bullpen innings
+    """
+    ppi            = opener_stats.get("pitches_per_inning") or 15.5
+    opener_innings = min(opener_pitch_limit / ppi, TYPICAL_OPENER_INNINGS)
+    opener_xfip    = opener_stats.get("xfip_blended", LEAGUE_AVG_XFIP)
+
+    bulk_stats   = _identify_bulk_reliever(db, team, game_date)
+    bulk_xfip    = bulk_stats["xfip_blended"] if bulk_stats else LEAGUE_AVG_XFIP
+    bulk_innings = min(TYPICAL_BULK_INNINGS, 9.0 - opener_innings)
+
+    bp_woba = team_bullpen_stats(db, team, game_date)["woba_fatigued"]
+
+    return {
+        "opener_xfip":    round(opener_xfip, 3),
+        "opener_innings": round(opener_innings, 2),
+        "bulk_xfip":      round(bulk_xfip, 3),
+        "bulk_innings":   round(bulk_innings, 2),
+        "bp_woba":        round(bp_woba, 4),
     }
 
 
