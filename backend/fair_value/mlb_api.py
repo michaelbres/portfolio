@@ -18,6 +18,46 @@ log = logging.getLogger(__name__)
 BASE = "https://statsapi.mlb.com"
 TIMEOUT = 10   # seconds
 
+# Map Kalshi full team names → MLB abbreviations used throughout the model.
+# Keys are lowercase for case-insensitive matching.
+_KALSHI_TEAM_MAP: dict[str, str] = {
+    "arizona diamondbacks": "ARI", "d-backs": "ARI",
+    "atlanta braves": "ATL", "braves": "ATL",
+    "baltimore orioles": "BAL", "orioles": "BAL",
+    "boston red sox": "BOS", "red sox": "BOS",
+    "chicago cubs": "CHC", "cubs": "CHC",
+    "chicago white sox": "CWS", "white sox": "CWS",
+    "cincinnati reds": "CIN", "reds": "CIN",
+    "cleveland guardians": "CLE", "guardians": "CLE",
+    "colorado rockies": "COL", "rockies": "COL",
+    "detroit tigers": "DET", "tigers": "DET",
+    "houston astros": "HOU", "astros": "HOU",
+    "kansas city royals": "KC",  "royals": "KC",
+    "los angeles angels": "LAA", "angels": "LAA",
+    "los angeles dodgers": "LAD", "dodgers": "LAD",
+    "miami marlins": "MIA", "marlins": "MIA",
+    "milwaukee brewers": "MIL", "brewers": "MIL",
+    "minnesota twins": "MIN", "twins": "MIN",
+    "new york mets": "NYM", "mets": "NYM",
+    "new york yankees": "NYY", "yankees": "NYY",
+    "oakland athletics": "OAK", "athletics": "OAK",
+    "philadelphia phillies": "PHI", "phillies": "PHI",
+    "pittsburgh pirates": "PIT", "pirates": "PIT",
+    "san diego padres": "SD",  "padres": "SD",
+    "san francisco giants": "SF",  "giants": "SF",
+    "seattle mariners": "SEA", "mariners": "SEA",
+    "st. louis cardinals": "STL", "cardinals": "STL",
+    "tampa bay rays": "TB",  "rays": "TB",
+    "texas rangers": "TEX", "rangers": "TEX",
+    "toronto blue jays": "TOR", "blue jays": "TOR",
+    "washington nationals": "WSH", "nationals": "WSH",
+}
+
+
+def _kalshi_name_to_abbrev(name: str) -> str:
+    """Convert a full Kalshi team name to the model's abbreviation, or return as-is."""
+    return _KALSHI_TEAM_MAP.get(name.strip().lower(), name.strip().upper())
+
 
 def _get(path: str, params: dict | None = None) -> dict:
     url = BASE + path
@@ -251,30 +291,62 @@ def get_kalshi_mlb_lines(game_date: date) -> list[dict]:
             continue
         try:
             markets = event.get("markets", [])
-            if len(markets) < 2:
+            if not markets:
                 continue
-            # Kalshi shows both sides; find home/away from subtitle or title
+
+            # Parse home/away team from the event title (e.g. "Colorado Rockies @ San Francisco Giants")
             title: str = event.get("title", "")
-            # Very rough: split on ' @ ' or ' vs '
             if " @ " in title:
-                away_name, home_name = [t.strip() for t in title.split(" @ ", 1)]
+                away_raw, home_raw = [t.strip() for t in title.split(" @ ", 1)]
             elif " vs " in title.lower():
-                away_name, home_name = [t.strip() for t in title.lower().split(" vs ", 1)]
+                away_raw, home_raw = [t.strip() for t in title.split(" vs ", 1)]
             else:
                 continue
 
-            # Use yes_bid price (best buy) as implied probability
-            prices = {m.get("subtitle", "").lower(): m.get("yes_bid", 50) / 100
-                      for m in markets}
+            home_abbrev = _kalshi_name_to_abbrev(home_raw)
+            away_abbrev = _kalshi_name_to_abbrev(away_raw)
+
+            # Extract yes_bid (best buy price, 0–100 cents) from each market.
+            # Subtitles vary by Kalshi format: "home"/"away", team name, or "Yes"/"No".
+            # Strategy: identify which market belongs to home vs away by matching the
+            # subtitle against the team name / "home" / "away" keywords.
+            home_price: float | None = None
+            away_price: float | None = None
+
+            for m in markets:
+                subtitle = m.get("subtitle", "").strip().lower()
+                yes_bid   = m.get("yes_bid")
+                if yes_bid is None:
+                    continue
+                price = float(yes_bid) / 100.0
+
+                if subtitle in ("home", "yes") or home_raw.lower() in subtitle or home_abbrev.lower() in subtitle:
+                    home_price = price
+                elif subtitle in ("away", "no") or away_raw.lower() in subtitle or away_abbrev.lower() in subtitle:
+                    away_price = price
+
+            # Fallback: if only 2 markets and we couldn't match, take first=home second=away
+            if home_price is None and away_price is None and len(markets) == 2:
+                p0 = markets[0].get("yes_bid")
+                p1 = markets[1].get("yes_bid")
+                if p0 is not None and p1 is not None:
+                    home_price = float(p0) / 100.0
+                    away_price = float(p1) / 100.0
+
+            if home_price is None or away_price is None:
+                log.debug("Kalshi: could not extract prices for %s @ %s (ticker=%s)",
+                          away_abbrev, home_abbrev, ticker)
+                continue
 
             lines.append({
-                "home_team": home_name,
-                "away_team": away_name,
-                "home_yes_price": prices.get("home", None),
-                "away_yes_price": prices.get("away", None),
+                "home_team": home_abbrev,
+                "away_team": away_abbrev,
+                "home_yes_price": home_price,
+                "away_yes_price": away_price,
                 "source": "kalshi",
             })
-        except Exception:
+        except Exception as exc:
+            log.debug("Kalshi parse error for ticker %s: %s", ticker, exc)
             continue
 
     return lines
