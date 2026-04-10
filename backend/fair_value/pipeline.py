@@ -579,14 +579,58 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
         away_run_factor=      away_rf,
     )
 
+    # ── Apply Platt scaling + closing-line anchor (same logic as _process_game) ─
+    from .win_probability import prob_to_american
+    raw_home_wp   = fv["home_win_prob"]
+    model_home_wp = calibrated_prob(raw_prob=raw_home_wp)
+
+    # Re-fetch Kalshi lines so the anchor is always fresh
+    market_home_prob: float | None = None
+    try:
+        kalshi_lines = get_kalshi_mlb_lines(game_date)
+        def _norm(t: str) -> str:
+            t = (t or "").upper().strip()
+            return TEAM_ALIASES.get(t, t)
+        home_key = _norm(row.home_team)
+        away_key = _norm(row.away_team)
+        for line in kalshi_lines:
+            lh = _norm(line.get("home_team", ""))
+            la = _norm(line.get("away_team", ""))
+            if (lh == home_key and la == away_key) or (lh == away_key and la == home_key):
+                hp = line.get("home_yes_price")
+                ap = line.get("away_yes_price")
+                if hp and ap:
+                    total = float(hp) + float(ap)
+                    mh = float(hp) / total
+                    if lh != home_key:
+                        mh = 1.0 - mh
+                    market_home_prob = mh
+                    row.home_market_odds = prob_to_american(mh)
+                    row.away_market_odds = prob_to_american(1.0 - mh)
+                    row.market_source    = "kalshi"
+                break
+    except Exception:
+        pass
+
+    if market_home_prob is not None and MARKET_BLEND_WEIGHT > 0:
+        blended = (1.0 - MARKET_BLEND_WEIGHT) * model_home_wp + MARKET_BLEND_WEIGHT * market_home_prob
+        lo = market_home_prob - MAX_MARKET_DEVIATION
+        hi = market_home_prob + MAX_MARKET_DEVIATION
+        final_home_wp = max(lo, min(hi, blended))
+    else:
+        final_home_wp = model_home_wp
+
+    final_home_wp = max(MIN_WIN_PROB, min(MAX_WIN_PROB, final_home_wp))
+    final_away_wp = 1.0 - final_home_wp
+
     row.home_sp_proj_innings = fv["home_sp_proj_innings"]
     row.away_sp_proj_innings = fv["away_sp_proj_innings"]
     row.home_lambda    = fv["home_lambda"]
     row.away_lambda    = fv["away_lambda"]
-    row.home_win_prob  = fv["home_win_prob"]
-    row.away_win_prob  = fv["away_win_prob"]
-    row.home_fair_odds = fv["home_fair_odds"]
-    row.away_fair_odds = fv["away_fair_odds"]
+    row.home_win_prob  = round(final_home_wp, 4)
+    row.away_win_prob  = round(final_away_wp, 4)
+    row.home_fair_odds = prob_to_american(final_home_wp)
+    row.away_fair_odds = prob_to_american(final_away_wp)
     db.commit()
     db.refresh(row)
 
