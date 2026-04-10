@@ -234,6 +234,7 @@ def live_odds(
     """
     from fair_value.mlb_api import get_kalshi_mlb_lines
     from fair_value.win_probability import prob_to_american
+    from fair_value.constants import TEAM_ALIASES
 
     d = date.fromisoformat(game_date) if game_date else date.today()
 
@@ -242,23 +243,29 @@ def live_odds(
     except Exception:
         kalshi_lines = []
 
+    def _norm(t: str) -> str:
+        t = (t or "").upper().strip()
+        return TEAM_ALIASES.get(t, t)
+
     games = db.query(FairValueGame).filter(FairValueGame.game_date == d).all()
 
     result = []
     for game in games:
+        home_key = _norm(game.home_team)
+        away_key = _norm(game.away_team)
         for line in kalshi_lines:
-            ht = line.get("home_team", "").upper()
-            at = line.get("away_team", "").upper()
-            home = game.home_team.upper()
-            away = game.away_team.upper()
-            # fuzzy match: abbreviation contained in full name or vice versa
-            if home in ht or ht in home or away in at or at in away:
+            lh = _norm(line.get("home_team", ""))
+            la = _norm(line.get("away_team", ""))
+            if (lh == home_key and la == away_key) or (lh == away_key and la == home_key):
                 hp = line.get("home_yes_price")
                 ap = line.get("away_yes_price")
                 if hp and ap:
                     total = float(hp) + float(ap)
                     home_prob = float(hp) / total
-                    away_prob = float(ap) / total
+                    # flip if we matched on the away side
+                    if lh != home_key:
+                        home_prob = 1.0 - home_prob
+                    away_prob = 1.0 - home_prob
                     result.append({
                         "game_pk":    game.game_pk,
                         "home_team":  game.home_team,
