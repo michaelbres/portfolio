@@ -120,9 +120,14 @@ DEPTH_FRAGILITY_WOBA    = 0.335   # raw bp wOBA above this → poor bullpen
 DEPTH_FRAGILITY_MULT    = 3.0     # triple fatigue penalty for poor-depth bullpens
 
 # ── Market calibration blend (Step 5) ─────────────────────────────────────────
-# When Kalshi (or other sharp) market probabilities are available, blend them
-# with the model to capture information not in the bottom-up stats.
-MARKET_BLEND_WEIGHT     = 0.30    # final = model × 0.70 + market × 0.30
+# Closing-line predictor mode: we no longer try to "beat" the market — the goal
+# is to forecast where Kalshi will settle so positions can be sized/timed.
+# When a Kalshi no-vig probability is available, we anchor the final win
+# probability heavily to it, allowing only a capped independent-model nudge.
+MARKET_BLEND_WEIGHT     = 0.85    # final = model × 0.15 + market × 0.85
+MAX_MARKET_DEVIATION    = 0.06    # post-blend, cap |final − market| at 6 pp
+MIN_WIN_PROB            = 0.02    # sanity floor for final win prob
+MAX_WIN_PROB            = 0.98    # sanity ceiling for final win prob
 
 # ── Stuff+ Bayesian prior ─────────────────────────────────────────────────────
 # Regresses observed xFIP toward a Stuff+-anchored prior instead of raw league

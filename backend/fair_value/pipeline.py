@@ -29,6 +29,10 @@ from .constants import (
     LEAGUE_AVG_WOBA,
     LEAGUE_AVG_XFIP,
     MARKET_BLEND_WEIGHT,
+    MAX_MARKET_DEVIATION,
+    MIN_WIN_PROB,
+    MAX_WIN_PROB,
+    TEAM_ALIASES,
     park_factor,
 )
 from .mlb_api import (
@@ -338,7 +342,7 @@ def _process_game(db: Session, game: dict,
         away_bulk_inn=        away_cpv["bulk_innings"]     if away_cpv else None,
     )
 
-    # Market implied probability (no-vig) for Bayesian blend
+    # Market implied probability (no-vig) for closing-line anchor
     market_home_prob: float | None = None
 
     # ── Market lines (Kalshi) ─────────────────────────────────────────────────
@@ -346,34 +350,72 @@ def _process_game(db: Session, game: dict,
     away_market_odds = None
     market_source    = None
 
+    # Robust team matching: normalise aliases on both sides, accept a match on
+    # either home *or* away team (Kalshi markets are bidirectional).
+    def _norm(t: str) -> str:
+        t = (t or "").upper().strip()
+        return TEAM_ALIASES.get(t, t)
+
+    home_key = _norm(home_team)
+    away_key = _norm(away_team)
+
+    matched_line = None
     for line in kalshi_lines:
-        ht = line.get("home_team", "").upper()
-        if home_team in ht or ht in home_team:
-            hp = line.get("home_yes_price")
-            ap = line.get("away_yes_price")
-            if hp and ap:
-                from .win_probability import prob_to_american
-                # Strip Kalshi's implicit vig so both sides sum to 1.0
-                total = float(hp) + float(ap)
-                market_home_prob = float(hp) / total
-                home_market_odds = prob_to_american(market_home_prob)
-                away_market_odds = prob_to_american(1.0 - market_home_prob)
-                market_source    = "kalshi"
+        line_home = _norm(line.get("home_team", ""))
+        line_away = _norm(line.get("away_team", ""))
+        if (line_home == home_key and line_away == away_key) or \
+           (line_home == away_key and line_away == home_key):
+            matched_line = line
             break
 
-    # ── Apply Platt scaling ───────────────────────────────────────────────────
-    raw_home_wp   = fv["home_win_prob"]
-    final_home_wp = calibrated_prob(raw_prob=raw_home_wp)
+    if matched_line is not None:
+        hp = matched_line.get("home_yes_price")
+        ap = matched_line.get("away_yes_price")
+        if hp and ap:
+            from .win_probability import prob_to_american
+            # Strip Kalshi's implicit vig so both sides sum to 1.0
+            total = float(hp) + float(ap)
+            mh = float(hp) / total
+            # If we matched on the flipped side, invert the probability
+            if _norm(matched_line.get("home_team", "")) != home_key:
+                mh = 1.0 - mh
+            market_home_prob = mh
+            home_market_odds = prob_to_american(market_home_prob)
+            away_market_odds = prob_to_american(1.0 - market_home_prob)
+            market_source    = "kalshi"
 
-    # ── Step 5: Market calibration blend ─────────────────────────────────────
-    # When a sharp market probability is available (Kalshi), blend it in at
-    # MARKET_BLEND_WEIGHT (30%).  This captures information — injury news,
-    # travel fatigue, late lineup changes — not present in our Statcast model.
+    # ── Apply Platt scaling ───────────────────────────────────────────────────
+    raw_home_wp      = fv["home_win_prob"]
+    model_home_wp    = calibrated_prob(raw_prob=raw_home_wp)
+
+    # ── Step 5: Closing-line anchor ───────────────────────────────────────────
+    # Goal: predict where the Kalshi line will close so positions can be sized
+    # accordingly — NOT to beat the market.  We therefore heavily anchor the
+    # final win probability to the no-vig market price (MARKET_BLEND_WEIGHT),
+    # then cap the residual model nudge at ±MAX_MARKET_DEVIATION (6 pp).
     if market_home_prob is not None and MARKET_BLEND_WEIGHT > 0:
-        final_home_wp = (
-            (1.0 - MARKET_BLEND_WEIGHT) * final_home_wp
+        blended = (
+            (1.0 - MARKET_BLEND_WEIGHT) * model_home_wp
             + MARKET_BLEND_WEIGHT * market_home_prob
         )
+        # Hard cap deviation from the market anchor
+        lo = market_home_prob - MAX_MARKET_DEVIATION
+        hi = market_home_prob + MAX_MARKET_DEVIATION
+        final_home_wp = max(lo, min(hi, blended))
+
+        log.info("    market anchor: model=%.3f  market=%.3f  Δ=%+.3f  "
+                 "blended=%.3f  final=%.3f",
+                 model_home_wp, market_home_prob,
+                 model_home_wp - market_home_prob,
+                 blended, final_home_wp)
+    else:
+        final_home_wp = model_home_wp
+        log.warning("    NO KALSHI LINE matched for %s @ %s — "
+                    "using raw model prob %.3f (no anchor applied)",
+                    away_team, home_team, final_home_wp)
+
+    # Sanity bounds
+    final_home_wp = max(MIN_WIN_PROB, min(MAX_WIN_PROB, final_home_wp))
     final_away_wp = 1.0 - final_home_wp
 
     from .win_probability import prob_to_american
