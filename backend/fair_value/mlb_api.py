@@ -350,3 +350,113 @@ def get_kalshi_mlb_lines(game_date: date) -> list[dict]:
             continue
 
     return lines
+
+
+def get_kalshi_mlb_totals(game_date: date) -> list[dict]:
+    """
+    Fetch MLB total-runs (over/under) markets from Kalshi.
+
+    Returns a list of:
+        {"home_team": str, "away_team": str,
+         "line": float,          # e.g. 8.5
+         "over_yes_price": float,   # 0–1 implied probability
+         "under_yes_price": float}
+
+    Kalshi's total series ticker is typically "MLBT".
+    Ticker format: MLBT-YYYYMMDD-AWAYTEAM-HOMETEAM-LINE  (best guess; may vary).
+    Falls back to scanning MLBM events for embedded total markets.
+    Returns empty list on any error.
+    """
+    import re
+    date_str = game_date.strftime("%Y%m%d")
+    results: list[dict] = []
+
+    for series in ("MLBT", "MLBR", "MLBO"):   # try common Kalshi total series tickers
+        try:
+            resp = requests.get(
+                f"{KALSHI_BASE}/events",
+                params={"status": "open", "series_ticker": series, "limit": 200},
+                timeout=TIMEOUT,
+            )
+            if resp.status_code != 200:
+                continue
+            events = resp.json().get("events", [])
+        except Exception:
+            continue
+
+        for event in events:
+            ticker: str = event.get("event_ticker", "")
+            if date_str not in ticker:
+                continue
+            try:
+                title: str = event.get("title", "")
+                markets = event.get("markets", [])
+                if not markets:
+                    continue
+
+                # Parse team names from title
+                home_abbrev = away_abbrev = None
+                if " @ " in title:
+                    away_raw, home_raw = [t.strip() for t in title.split(" @ ", 1)]
+                    # Strip "over X runs:" prefix if present
+                    for chunk in (away_raw, home_raw):
+                        chunk = re.sub(r"(?i)over\s+[\d.]+\s+runs?:?\s*", "", chunk).strip()
+                    home_abbrev = _kalshi_name_to_abbrev(home_raw)
+                    away_abbrev = _kalshi_name_to_abbrev(away_raw)
+
+                # Extract numeric line from ticker (e.g. "...8.5" or "...9")
+                line_match = re.search(r"[-_](\d+(?:\.\d+)?)$", ticker)
+                line: float | None = float(line_match.group(1)) if line_match else None
+
+                # Also try title for "over X.X runs"
+                if line is None:
+                    lm = re.search(r"(?i)(\d+(?:\.\d+)?)\s*runs?", title)
+                    if lm:
+                        line = float(lm.group(1))
+
+                if line is None:
+                    continue
+
+                # Extract over/under prices from markets
+                over_price: float | None = None
+                under_price: float | None = None
+                for m in markets:
+                    subtitle = m.get("subtitle", "").strip().lower()
+                    yes_bid = m.get("yes_bid")
+                    if yes_bid is None:
+                        continue
+                    price = float(yes_bid) / 100.0
+                    if "over" in subtitle or subtitle in ("yes", "o"):
+                        over_price = price
+                    elif "under" in subtitle or subtitle in ("no", "u"):
+                        under_price = price
+
+                # Positional fallback for 2-market events
+                if over_price is None and under_price is None and len(markets) == 2:
+                    p0 = markets[0].get("yes_bid")
+                    p1 = markets[1].get("yes_bid")
+                    if p0 is not None and p1 is not None:
+                        over_price  = float(p0) / 100.0
+                        under_price = float(p1) / 100.0
+
+                if over_price is None:
+                    continue
+
+                entry: dict = {"line": line, "over_yes_price": over_price}
+                if under_price is not None:
+                    entry["under_yes_price"] = under_price
+                else:
+                    entry["under_yes_price"] = 1.0 - over_price
+                if home_abbrev:
+                    entry["home_team"] = home_abbrev
+                    entry["away_team"] = away_abbrev
+                results.append(entry)
+
+            except Exception as exc:
+                log.debug("Kalshi totals parse error for ticker %s: %s", ticker, exc)
+                continue
+
+        if results:
+            break   # found data from this series, no need to try others
+
+    return results

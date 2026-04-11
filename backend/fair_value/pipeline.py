@@ -40,6 +40,7 @@ from .mlb_api import (
     get_boxscore_lineups,
     get_pitcher_hand,
     get_kalshi_mlb_lines,
+    get_kalshi_mlb_totals,
 )
 from .weather import weather_carry_factor
 from .calibration import calibrated_prob
@@ -60,6 +61,7 @@ from .stats_engine import (
 from .win_probability import (
     compute_game_fair_value,
     projected_innings,
+    total_runs_over_prob,
 )
 
 log = logging.getLogger(__name__)
@@ -172,12 +174,17 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
 
     log.info("Processing %d games", len(games))
 
-    # 2. Optional: Kalshi market lines
+    # 2. Optional: Kalshi market lines + totals
     kalshi_lines = []
+    kalshi_totals = []
     try:
         kalshi_lines = get_kalshi_mlb_lines(game_date)
     except Exception:
-        pass   # market lines are optional
+        pass
+    try:
+        kalshi_totals = get_kalshi_mlb_totals(game_date)
+    except Exception:
+        pass
 
     results = []
     failed_errors: list[str] = []
@@ -193,6 +200,7 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
             result = _process_game(
                 db=db, game=g,
                 kalshi_lines=kalshi_lines,
+                kalshi_totals=kalshi_totals,
             )
             if result:
                 results.append(result)
@@ -221,7 +229,8 @@ def run_pipeline(game_date: date, db: Session, season: int | None = None,
 
 
 def _process_game(db: Session, game: dict,
-                  kalshi_lines: list[dict]) -> Optional[dict]:
+                  kalshi_lines: list[dict],
+                  kalshi_totals: list[dict] | None = None) -> Optional[dict]:
     game_pk   = game["game_pk"]
     home_team = game["home_team"]
     away_team = game["away_team"]
@@ -490,7 +499,41 @@ def _process_game(db: Session, game: dict,
     row.home_market_odds = home_market_odds
     row.away_market_odds = away_market_odds
     row.market_source    = market_source
-    row.model_version    = MODEL_VERSION
+
+    # ── Opening price — set once on first computation, never overwritten ──────
+    # "Existing" means this row was in the DB before this pipeline run.
+    # If it's brand new, the current Kalshi price IS the opening price.
+    if not existing and home_market_odds is not None:
+        row.opening_home_odds = home_market_odds
+        row.opening_away_odds = away_market_odds
+
+    # ── Totals ────────────────────────────────────────────────────────────────
+    model_total = round(fv["home_lambda"] + fv["away_lambda"], 2)
+    row.model_total = model_total
+
+    # Match Kalshi total for this game
+    if kalshi_totals:
+        for tot in kalshi_totals:
+            th = _norm(tot.get("home_team", ""))
+            ta = _norm(tot.get("away_team", ""))
+            # Match on both teams, or just on line if teams not in ticker
+            if (th == home_key and ta == away_key) or (th == away_key and ta == home_key) \
+               or (not th and not ta):
+                line = tot.get("line")
+                over_price = tot.get("over_yes_price")
+                if line is not None and over_price is not None:
+                    row.kalshi_total_line = line
+                    row.kalshi_over_price = round(over_price, 4)
+                    row.model_over_prob   = round(
+                        total_runs_over_prob(fv["home_lambda"], fv["away_lambda"], line), 4
+                    )
+                    log.info("    totals: model=%.2f  kalshi_line=%.1f  "
+                             "model_over=%.1f%%  kalshi_over=%.1f%%",
+                             model_total, line,
+                             row.model_over_prob * 100, over_price * 100)
+                break
+
+    row.model_version = MODEL_VERSION
 
     # Persist lineup slots (delete old, insert new)
     db.query(FairValueLineupSlot).filter(

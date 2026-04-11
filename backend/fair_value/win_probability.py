@@ -351,6 +351,25 @@ def composite_pitching_value(
     )
 
 
+def total_runs_over_prob(lambda_home: float, lambda_away: float,
+                         line: float, r: float = NEGBIN_DISPERSION) -> float:
+    """
+    P(home_runs + away_runs > line) using full NegBin convolution.
+
+    For half-point lines (e.g. 8.5) this is strictly over/under.
+    For whole-number lines (e.g. 9.0) the push case (total == line) counts
+    as under (standard Kalshi/sportsbook treatment: no-push unless listed).
+    """
+    home_pmf = _build_pmf(lambda_home, r=r)
+    away_pmf = _build_pmf(lambda_away, r=r)
+    p_over = 0.0
+    for h in range(MAX_RUNS + 1):
+        for a in range(MAX_RUNS + 1):
+            if (h + a) > line:
+                p_over += home_pmf[h] * away_pmf[a]
+    return min(max(p_over, 0.001), 0.999)
+
+
 # ── Odds conversion ───────────────────────────────────────────────────────────
 
 def prob_to_american(p: float) -> int:

@@ -242,7 +242,90 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
 
 // ── Odds panel ────────────────────────────────────────────────────────────────
 
-function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite, isLive }) {
+// ── Totals row ────────────────────────────────────────────────────────────────
+
+function TotalsRow({ modelTotal, kalshiLine, kalshiOverPrice, modelOverProb }) {
+  const hasKalshi = kalshiLine != null && kalshiOverPrice != null
+
+  // Direction signal: model says over/under is more likely than Kalshi prices
+  let signal = null
+  if (hasKalshi && modelOverProb != null) {
+    const diff = modelOverProb - kalshiOverPrice
+    if (Math.abs(diff) >= 0.04) {
+      signal = diff > 0
+        ? { text: `Model leans OVER ${kalshiLine}`, color: '#34D399' }
+        : { text: `Model leans UNDER ${kalshiLine}`, color: '#F87171' }
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>Totals</span>
+
+      {/* Model total */}
+      <div className="flex items-center gap-1 text-mist">
+        <span style={{ opacity: 0.6 }}>Model:</span>
+        <span className="font-mono font-semibold text-snow">{modelTotal?.toFixed(1)} runs</span>
+      </div>
+
+      {/* Kalshi line */}
+      {hasKalshi ? (
+        <>
+          <div className="flex items-center gap-1 text-mist">
+            <span style={{ opacity: 0.6 }}>Kalshi O/U:</span>
+            <span className="font-mono font-semibold text-snow">{kalshiLine}</span>
+          </div>
+          <div className="flex items-center gap-1 text-mist">
+            <span style={{ opacity: 0.6 }}>Over:</span>
+            <span className="font-mono text-snow">
+              {fmtOdds(Math.round(kalshiOverPrice >= 0.5
+                ? -kalshiOverPrice / (1 - kalshiOverPrice) * 100
+                : (1 - kalshiOverPrice) / kalshiOverPrice * 100))}
+            </span>
+          </div>
+          {modelOverProb != null && (
+            <div className="flex items-center gap-1 text-mist">
+              <span style={{ opacity: 0.6 }}>Model over:</span>
+              <span className="font-mono text-snow">{fmtPct(modelOverProb)}</span>
+            </div>
+          )}
+          {signal && (
+            <span
+              className="font-semibold px-2 py-0.5 rounded-full text-[11px]"
+              style={{
+                background: signal.color === '#34D399'
+                  ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.10)',
+                border: `1px solid ${signal.color}33`,
+                color: signal.color,
+              }}
+            >
+              {signal.text}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="text-mist" style={{ opacity: 0.5 }}>no Kalshi line</span>
+      )}
+    </div>
+  )
+}
+
+
+function movementArrow(openingOdds, currentOdds) {
+  // Returns null if no movement, or {dir, delta, color} for display
+  if (openingOdds == null || currentOdds == null) return null
+  const toProb = (o) => o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100)
+  const delta = (toProb(currentOdds) - toProb(openingOdds)) * 100  // pp
+  if (Math.abs(delta) < 0.5) return null
+  return {
+    dir: delta > 0 ? '▲' : '▼',
+    delta: Math.abs(delta).toFixed(1),
+    color: delta > 0 ? '#34D399' : '#F87171',  // green = moved toward this team
+  }
+}
+
+function OddsPanel({ team, winProb, fairOdds, marketOdds, openingOdds, lambda, isFavorite, isLive }) {
+  const mv = movementArrow(openingOdds, marketOdds)
   return (
     <div
       className="flex flex-col items-center gap-1 px-4 py-3 rounded-xl min-w-[100px]"
@@ -282,7 +365,17 @@ function OddsPanel({ team, winProb, fairOdds, marketOdds, lambda, isFavorite, is
               </span>
             )}
             <span className="text-xs text-mist font-mono font-semibold">{fmtOdds(marketOdds)}</span>
+            {mv && (
+              <span className="text-[10px] font-bold" style={{ color: mv.color }}>
+                {mv.dir}{mv.delta}pp
+              </span>
+            )}
           </div>
+          {openingOdds != null && openingOdds !== marketOdds && (
+            <span className="text-[10px] text-mist" style={{ opacity: 0.55 }}>
+              open {fmtOdds(openingOdds)}
+            </span>
+          )}
           <EdgeBadge modelOdds={fairOdds} marketOdds={marketOdds} />
         </div>
       )}
@@ -299,6 +392,9 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
   const homeMarketOdds = liveOdds?.home_odds ?? game.home_market_odds
   const awayMarketOdds = liveOdds?.away_odds ?? game.away_market_odds
   const isLive = liveOdds != null
+
+  const homeOpeningOdds = game.opening_home_odds
+  const awayOpeningOdds = game.opening_away_odds
 
   const gameTime = game.game_time_utc
     ? new Date(game.game_time_utc).toLocaleTimeString('en-US', {
@@ -381,6 +477,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
             winProb={game.away_win_prob}
             fairOdds={game.away_fair_odds}
             marketOdds={awayMarketOdds}
+            openingOdds={awayOpeningOdds}
             lambda={game.away_lambda}
             isFavorite={!homeIsFav}
             isLive={isLive}
@@ -391,6 +488,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
             winProb={game.home_win_prob}
             fairOdds={game.home_fair_odds}
             marketOdds={homeMarketOdds}
+            openingOdds={homeOpeningOdds}
             lambda={game.home_lambda}
             isFavorite={homeIsFav}
             isLive={isLive}
@@ -494,6 +592,21 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
             </div>
           </div>
         </div>
+
+        {/* Totals */}
+        {game.model_total != null && (
+          <div
+            className="pt-3"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <TotalsRow
+              modelTotal={game.model_total}
+              kalshiLine={game.kalshi_total_line}
+              kalshiOverPrice={game.kalshi_over_price}
+              modelOverProb={game.model_over_prob}
+            />
+          </div>
+        )}
 
         {/* Footer */}
         <div

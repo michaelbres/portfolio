@@ -232,6 +232,17 @@ class FairValueGame(Base):
     away_market_odds = Column(Integer)
     market_source = Column(String(50))
 
+    # Opening Kalshi price — set once on first pipeline run, never overwritten.
+    # Lets users track morning line vs current line for trade timing.
+    opening_home_odds = Column(Integer)
+    opening_away_odds = Column(Integer)
+
+    # Totals model
+    model_total      = Column(Float)    # home_lambda + away_lambda (expected combined runs)
+    kalshi_total_line = Column(Float)   # the O/U line Kalshi is pricing for this game
+    kalshi_over_price = Column(Float)   # Kalshi no-vig over probability (0–1)
+    model_over_prob   = Column(Float)   # NegBin P(total > kalshi_total_line)
+
     model_version = Column(String(20), default="1.0")
     computed_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

@@ -18,6 +18,14 @@ _COLUMN_MIGRATIONS = [
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_sp_xfip_blended FLOAT",
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS weather_carry_factor FLOAT",
     "ALTER TABLE statcast_pitches ADD COLUMN IF NOT EXISTS batter_name VARCHAR(100)",
+    # Opening price tracking (set once on first pipeline run, never overwritten)
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS opening_home_odds INTEGER",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS opening_away_odds INTEGER",
+    # Totals model
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS model_total FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS kalshi_total_line FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS kalshi_over_price FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS model_over_prob FLOAT",
 ]
 
 try:
