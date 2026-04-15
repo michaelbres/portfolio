@@ -262,6 +262,25 @@ def backfill(db: Session, days: int) -> None:
     log.info("Backfill complete: %d rows written across %d days.", total, days)
 
 
+def run_stuff_plus(db: Session) -> None:
+    """
+    Train Stuff+ models for the current season and write to stuff_plus_scores.
+    Called every night so scores stay current as the season accumulates.
+    """
+    from analytics.stuff_plus import compute_and_store
+    season = date.today().year
+    log.info("Stuff+ — training models for season %d …", season)
+    result = compute_and_store(db, season)
+    if "error" in result:
+        log.warning("Stuff+ skipped: %s", result["error"])
+    else:
+        log.info(
+            "Stuff+ — done: %d score rows written, families=%s",
+            result.get("n_score_rows_written", 0),
+            result.get("families_trained", []),
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Nightly fair-value calibration")
     parser.add_argument("--date", help="Target date YYYY-MM-DD (default: yesterday)")
@@ -269,6 +288,8 @@ def main() -> None:
                         help="Force re-fit of Platt coefficients even if no new data")
     parser.add_argument("--backfill", type=int, metavar="N",
                         help="Process the last N days of games (seeds calibration table)")
+    parser.add_argument("--no-stuff-plus", action="store_true",
+                        help="Skip Stuff+ model training (faster, for debugging)")
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -296,6 +317,11 @@ def main() -> None:
             stats["n"],
             stats["flagged"],
         )
+
+        # Train Stuff+ on tonight's accumulated Statcast data
+        if not getattr(args, "no_stuff_plus", False):
+            run_stuff_plus(db)
+
     finally:
         db.close()
 

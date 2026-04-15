@@ -431,3 +431,21 @@ def backfill_calibration(
                else f"Platt NOT re-fit (need ≥30 rows, have {len(cal_rows)}).")
         ),
     }
+
+
+# ── POST /admin/stuff-plus ────────────────────────────────────────────────────
+
+@router.post("/admin/stuff-plus")
+def run_stuff_plus(
+    season: Optional[int] = Query(None, description="Season year; defaults to current year"),
+    db: Session = Depends(get_db),
+):
+    """
+    Train Stuff+ models for the given season and populate stuff_plus_scores.
+    This is the manual trigger — it also runs nightly via the calibration cron.
+    Training on a full season of Statcast data takes ~30–60 seconds.
+    """
+    from analytics.stuff_plus import compute_and_store
+    s = season or date.today().year
+    result = compute_and_store(db, s)
+    return {"season": s, **result}
