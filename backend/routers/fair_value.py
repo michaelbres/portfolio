@@ -449,3 +449,95 @@ def run_stuff_plus(
     s = season or date.today().year
     result = compute_and_store(db, s)
     return {"season": s, **result}
+
+
+# ── GET /stuff-plus/leaderboard ───────────────────────────────────────────────
+
+@router.get("/stuff-plus/leaderboard")
+def stuff_plus_leaderboard(
+    season: Optional[int] = Query(None, description="Season year; defaults to current year"),
+    min_pitches: int = Query(50, ge=10, description="Minimum pitch count to include a row"),
+    db: Session = Depends(get_db),
+):
+    """
+    Return Stuff+ leaderboard for the given season.
+    Includes an overall ranking (pitch-count-weighted average across pitch types)
+    and a breakdown keyed by pitch type.
+    """
+    from models import StuffPlusScore
+
+    s = season or date.today().year
+
+    rows = (
+        db.query(StuffPlusScore)
+        .filter(
+            StuffPlusScore.season == s,
+            StuffPlusScore.n_pitches >= min_pitches,
+        )
+        .all()
+    )
+
+    if not rows:
+        return {
+            "season": s,
+            "overall": [],
+            "by_pitch_type": {},
+            "pitch_types_available": [],
+        }
+
+    # ── Build overall (pitch-count-weighted Stuff+ per pitcher) ───────────────
+    pitchers: dict = {}
+    for row in rows:
+        pid = row.pitcher_id
+        if pid not in pitchers:
+            pitchers[pid] = {
+                "pitcher_id":      pid,
+                "pitcher_name":    row.pitcher_name,
+                "pitch_breakdown": [],
+                "n_pitches_total": 0,
+                "_weighted_sum":   0.0,
+            }
+        pitchers[pid]["pitch_breakdown"].append({
+            "pitch_type":   row.pitch_type,
+            "stuff_plus":   row.avg_stuff_plus,
+            "n_pitches":    row.n_pitches,
+            "model_family": row.model_family,
+        })
+        pitchers[pid]["n_pitches_total"] += row.n_pitches
+        pitchers[pid]["_weighted_sum"]   += (row.avg_stuff_plus or 100) * row.n_pitches
+
+    overall = []
+    for p in pitchers.values():
+        total = p["n_pitches_total"]
+        p["overall_stuff_plus"] = round(p["_weighted_sum"] / total, 1) if total > 0 else None
+        p["n_pitch_types"]      = len(p["pitch_breakdown"])
+        del p["_weighted_sum"]
+        # Sort pitch breakdown by pitch count descending
+        p["pitch_breakdown"].sort(key=lambda x: x["n_pitches"], reverse=True)
+        overall.append(p)
+
+    overall.sort(key=lambda x: x["overall_stuff_plus"] or 0, reverse=True)
+
+    # ── By pitch type ─────────────────────────────────────────────────────────
+    by_pitch_type: dict = {}
+    for row in rows:
+        pt = row.pitch_type
+        if pt not in by_pitch_type:
+            by_pitch_type[pt] = []
+        by_pitch_type[pt].append({
+            "pitcher_id":   row.pitcher_id,
+            "pitcher_name": row.pitcher_name,
+            "stuff_plus":   row.avg_stuff_plus,
+            "n_pitches":    row.n_pitches,
+            "model_family": row.model_family,
+        })
+
+    for pt in by_pitch_type:
+        by_pitch_type[pt].sort(key=lambda x: x["stuff_plus"] or 0, reverse=True)
+
+    return {
+        "season":               s,
+        "overall":              overall,
+        "by_pitch_type":        by_pitch_type,
+        "pitch_types_available": sorted(by_pitch_type.keys()),
+    }

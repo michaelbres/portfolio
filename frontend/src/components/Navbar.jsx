@@ -2,10 +2,11 @@
 import { Link, useLocation } from 'react-router-dom'
 
 const LINKS = [
-  { to: '/',                    label: 'Home' },
-  { to: '/sports',              label: 'Sports Analytics' },
-  { to: '/sports/mlb/fair-value', label: 'Fair Value' },
-  { to: '/betting',             label: 'Betting' },
+  { to: '/',                        label: 'Home' },
+  { to: '/sports',                  label: 'Sports Analytics' },
+  { to: '/sports/mlb/fair-value',   label: 'Fair Value' },
+  { to: '/sports/mlb/stuff-plus',   label: 'Stuff+' },
+  { to: '/betting',                 label: 'Betting' },
 ]
 
 export default function Navbar() {

@@ -21,4 +21,8 @@ export const mlb = {
   dataStatus: ()             => api.get('/api/mlb/data-status'),
 }
 
+export const fairValue = {
+  stuffPlusLeaderboard: (params) => api.get('/api/fair-value/stuff-plus/leaderboard', { params }),
+}
+
 export default api
