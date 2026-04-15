@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc, or_, and_, Integer, cast
 from typing import Optional
 from database import get_db
-from models import StatcastPitch, DataFetchLog
+from models import StatcastPitch, DataFetchLog, StuffPlusScore
 
 router = APIRouter(prefix="/api/mlb", tags=["mlb"])
 
@@ -561,6 +561,20 @@ def pitcher_game_summary(
         })
 
     arsenal.sort(key=lambda x: -x["count"])
+
+    # Attach Stuff+ scores (season-level, from stuff_plus_scores table)
+    game_season = p0.game_date.year if p0.game_date else None
+    if game_season:
+        sp_rows = db.query(StuffPlusScore).filter(
+            StuffPlusScore.pitcher_id == pitcher_id,
+            StuffPlusScore.season == game_season,
+        ).all()
+        sp_map = {r.pitch_type: r.avg_stuff_plus for r in sp_rows}
+    else:
+        sp_map = {}
+
+    for row in arsenal:
+        row["stuff_plus"] = sp_map.get(row["pitch_type"])
 
     # Individual pitch coordinates for scatter plots
     pitch_coords = [{

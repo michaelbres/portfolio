@@ -126,6 +126,9 @@ const ARSENAL_COLS = [
   { key: 'chase_pct',  label: 'Chase%',  heat: true,   hib: true,  fmt: (v) => v != null ? v + '%' : '–' },
   { key: 'whiff_pct',  label: 'Whiff%',  heat: true,   hib: true,  fmt: (v) => v != null ? v + '%' : '–' },
   { key: 'avg_xwoba',  label: 'xwOBA',   heat: true,   hib: false, fmt: (v) => v?.toFixed(3) ?? '–' },
+  // Stuff+ is already on a 100 = avg scale — use fixed bounds instead of league norms
+  { key: 'stuff_plus', label: 'Stuff+',  heat: true,   hib: true,  fixedP10: 85, fixedP90: 120,
+    fmt: (v) => v != null ? String(Math.round(v)) : '–' },
 ]
 
 const LINE_COLS = [
@@ -297,7 +300,11 @@ export default function PitcherCard({ summary, norms = {}, onClose }) {
                     >
                       {ARSENAL_COLS.map((c, ci) => {
                         const val = row[c.key]
-                        const range = c.heat ? getRange(row.pitch_type, c.key) : null
+                        const range = c.heat
+                          ? (c.fixedP10 != null
+                              ? { p10: c.fixedP10, p90: c.fixedP90 }
+                              : getRange(row.pitch_type, c.key))
+                          : null
                         const style = range
                           ? heatColor(val, range.p10, range.p90, c.hib !== false)
                           : {}
