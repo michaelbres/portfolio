@@ -9,7 +9,7 @@
 # 2. Pick any unique topic name (treat it like a password — don't share it)
 # 3. In the app: tap + → enter your topic name → Subscribe
 # 4. Paste that same topic name here
-ntfy_topic: "PASTE_YOUR_TOPIC_NAME_HERE"   # e.g. "card-sniper-xyz789"
+ntfy_topic: "card-sniper-7492030583929299483"
 
 # Discord webhook — rich embeds with card image + variation notes
 # Create one at: Server Settings → Integrations → Webhooks
