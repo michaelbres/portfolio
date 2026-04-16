@@ -380,7 +380,7 @@ def _process_game(db: Session, game: dict,
     if matched_line is not None:
         hp = matched_line.get("home_yes_price")
         ap = matched_line.get("away_yes_price")
-        if hp and ap:
+        if hp is not None and ap is not None and float(hp) > 0 and float(ap) > 0:
             from .win_probability import prob_to_american
             # Strip Kalshi's implicit vig so both sides sum to 1.0
             total = float(hp) + float(ap)
@@ -396,6 +396,8 @@ def _process_game(db: Session, game: dict,
     # ── Apply Platt scaling ───────────────────────────────────────────────────
     raw_home_wp      = fv["home_win_prob"]
     model_home_wp    = calibrated_prob(raw_prob=raw_home_wp)
+    # Store independent model signal BEFORE market anchor — used for EV display
+    pure_model_home_wp = model_home_wp
 
     # ── Step 5: Closing-line anchor ───────────────────────────────────────────
     # Goal: predict where the Kalshi line will close so positions can be sized
@@ -499,6 +501,10 @@ def _process_game(db: Session, game: dict,
     row.home_market_odds = home_market_odds
     row.away_market_odds = away_market_odds
     row.market_source    = market_source
+
+    # Raw independent model signal (before Kalshi anchor) — used for EV display
+    row.home_model_prob = round(pure_model_home_wp, 4)
+    row.away_model_prob = round(1.0 - pure_model_home_wp, 4)
 
     # ── Opening price — set once on first computation, never overwritten ──────
     # "Existing" means this row was in the DB before this pipeline run.
@@ -624,8 +630,9 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
 
     # ── Apply Platt scaling + closing-line anchor (same logic as _process_game) ─
     from .win_probability import prob_to_american
-    raw_home_wp   = fv["home_win_prob"]
-    model_home_wp = calibrated_prob(raw_prob=raw_home_wp)
+    raw_home_wp        = fv["home_win_prob"]
+    model_home_wp      = calibrated_prob(raw_prob=raw_home_wp)
+    pure_model_home_wp = model_home_wp   # store before anchor
 
     # Re-fetch Kalshi lines so the anchor is always fresh
     market_home_prob: float | None = None
@@ -666,6 +673,8 @@ def recalculate_game(db: Session, game_pk: int, season: int | None = None) -> Op
     final_home_wp = max(MIN_WIN_PROB, min(MAX_WIN_PROB, final_home_wp))
     final_away_wp = 1.0 - final_home_wp
 
+    row.home_model_prob = round(pure_model_home_wp, 4)
+    row.away_model_prob = round(1.0 - pure_model_home_wp, 4)
     row.home_sp_proj_innings = fv["home_sp_proj_innings"]
     row.away_sp_proj_innings = fv["away_sp_proj_innings"]
     row.home_lambda    = fv["home_lambda"]

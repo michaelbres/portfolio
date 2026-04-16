@@ -237,6 +237,12 @@ class FairValueGame(Base):
     opening_home_odds = Column(Integer)
     opening_away_odds = Column(Integer)
 
+    # Raw model probability (before Kalshi market anchor).
+    # home_win_prob is the blended final; home_model_prob is the pure bottom-up
+    # estimate so the UI can display "model vs market" edge independently.
+    home_model_prob = Column(Float)
+    away_model_prob = Column(Float)
+
     # Totals model
     model_total      = Column(Float)    # home_lambda + away_lambda (expected combined runs)
     kalshi_total_line = Column(Float)   # the O/U line Kalshi is pricing for this game

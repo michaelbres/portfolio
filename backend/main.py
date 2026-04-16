@@ -21,6 +21,9 @@ _COLUMN_MIGRATIONS = [
     # Opening price tracking (set once on first pipeline run, never overwritten)
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS opening_home_odds INTEGER",
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS opening_away_odds INTEGER",
+    # Raw model probability (pre-market-anchor) — needed for EV display
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS home_model_prob FLOAT",
+    "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS away_model_prob FLOAT",
     # Totals model
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS model_total FLOAT",
     "ALTER TABLE fair_value_games ADD COLUMN IF NOT EXISTS kalshi_total_line FLOAT",

@@ -124,8 +124,8 @@ DEPTH_FRAGILITY_MULT    = 3.0     # triple fatigue penalty for poor-depth bullpe
 # is to forecast where Kalshi will settle so positions can be sized/timed.
 # When a Kalshi no-vig probability is available, we anchor the final win
 # probability heavily to it, allowing only a capped independent-model nudge.
-MARKET_BLEND_WEIGHT     = 0.85    # final = model × 0.15 + market × 0.85
-MAX_MARKET_DEVIATION    = 0.06    # post-blend, cap |final − market| at 6 pp
+MARKET_BLEND_WEIGHT     = 0.70    # final = model × 0.30 + market × 0.70
+MAX_MARKET_DEVIATION    = 0.08    # post-blend, cap |final − market| at 8 pp
 MIN_WIN_PROB            = 0.02    # sanity floor for final win prob
 MAX_WIN_PROB            = 0.98    # sanity ceiling for final win prob
 

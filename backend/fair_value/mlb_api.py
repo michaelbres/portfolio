@@ -54,9 +54,31 @@ _KALSHI_TEAM_MAP: dict[str, str] = {
 }
 
 
-def _kalshi_name_to_abbrev(name: str) -> str:
-    """Convert a full Kalshi team name to the model's abbreviation, or return as-is."""
-    return _KALSHI_TEAM_MAP.get(name.strip().lower(), name.strip().upper())
+def _kalshi_price(m: dict) -> float | None:
+    """
+    Extract the best available price from a Kalshi market object.
+    Priority: mid-price (bid+ask) > last_price > ask alone > bid alone.
+    Returns a float in [0, 1], or None if no usable price found.
+    """
+    def _cents(v) -> int:
+        try:
+            return int(v) if v is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    bid  = _cents(m.get("yes_bid"))
+    ask  = _cents(m.get("yes_ask"))
+    last = _cents(m.get("last_price"))
+
+    if bid > 0 and ask > 0:
+        return (bid + ask) / 200.0          # mid-price
+    if last > 0:
+        return last / 100.0
+    if ask > 0:
+        return ask / 100.0
+    if bid > 0:
+        return bid / 100.0
+    return None                             # no usable price
 
 
 def _get(path: str, params: dict | None = None) -> dict:
@@ -313,29 +335,49 @@ def get_kalshi_mlb_lines(game_date: date) -> list[dict]:
             home_price: float | None = None
             away_price: float | None = None
 
+            home_lower  = home_raw.lower()
+            away_lower  = away_raw.lower()
+            abbrev_home = home_abbrev.lower()
+            abbrev_away = away_abbrev.lower()
+
             for m in markets:
                 subtitle = m.get("subtitle", "").strip().lower()
-                yes_bid   = m.get("yes_bid")
-                if yes_bid is None:
+                price    = _kalshi_price(m)
+                if price is None:
+                    log.debug("Kalshi: no price in market %s (subtitle=%r)",
+                              m.get("ticker", "?"), subtitle)
                     continue
-                price = float(yes_bid) / 100.0
 
-                if subtitle in ("home", "yes") or home_raw.lower() in subtitle or home_abbrev.lower() in subtitle:
+                is_home = (
+                    subtitle in ("home", "yes")
+                    or home_lower in subtitle
+                    or abbrev_home in subtitle
+                    or subtitle.startswith(abbrev_home)
+                )
+                is_away = (
+                    subtitle in ("away", "no")
+                    or away_lower in subtitle
+                    or abbrev_away in subtitle
+                    or subtitle.startswith(abbrev_away)
+                )
+
+                if is_home and not is_away:
                     home_price = price
-                elif subtitle in ("away", "no") or away_raw.lower() in subtitle or away_abbrev.lower() in subtitle:
+                elif is_away and not is_home:
                     away_price = price
 
-            # Fallback: if only 2 markets and we couldn't match, take first=home second=away
+            # Positional fallback: 2-market events — first market = home yes
             if home_price is None and away_price is None and len(markets) == 2:
-                p0 = markets[0].get("yes_bid")
-                p1 = markets[1].get("yes_bid")
+                p0 = _kalshi_price(markets[0])
+                p1 = _kalshi_price(markets[1])
                 if p0 is not None and p1 is not None:
-                    home_price = float(p0) / 100.0
-                    away_price = float(p1) / 100.0
+                    home_price, away_price = p0, p1
+                    log.debug("Kalshi: positional fallback for %s @ %s", away_abbrev, home_abbrev)
 
             if home_price is None or away_price is None:
-                log.debug("Kalshi: could not extract prices for %s @ %s (ticker=%s)",
-                          away_abbrev, home_abbrev, ticker)
+                log.warning("Kalshi: could not match prices for %s @ %s (ticker=%s) "
+                            "home_price=%s away_price=%s",
+                            away_abbrev, home_abbrev, ticker, home_price, away_price)
                 continue
 
             lines.append({
@@ -422,10 +464,9 @@ def get_kalshi_mlb_totals(game_date: date) -> list[dict]:
                 under_price: float | None = None
                 for m in markets:
                     subtitle = m.get("subtitle", "").strip().lower()
-                    yes_bid = m.get("yes_bid")
-                    if yes_bid is None:
+                    price    = _kalshi_price(m)
+                    if price is None:
                         continue
-                    price = float(yes_bid) / 100.0
                     if "over" in subtitle or subtitle in ("yes", "o"):
                         over_price = price
                     elif "under" in subtitle or subtitle in ("no", "u"):
@@ -433,11 +474,10 @@ def get_kalshi_mlb_totals(game_date: date) -> list[dict]:
 
                 # Positional fallback for 2-market events
                 if over_price is None and under_price is None and len(markets) == 2:
-                    p0 = markets[0].get("yes_bid")
-                    p1 = markets[1].get("yes_bid")
+                    p0 = _kalshi_price(markets[0])
+                    p1 = _kalshi_price(markets[1])
                     if p0 is not None and p1 is not None:
-                        over_price  = float(p0) / 100.0
-                        under_price = float(p1) / 100.0
+                        over_price, under_price = p0, p1
 
                 if over_price is None:
                     continue
