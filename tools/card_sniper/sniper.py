@@ -104,6 +104,7 @@ def poll_once(
     for player in players:
         name = player["name"]
         max_price = float(player.get("max_price") or global_max)
+        note = str(player.get("note") or "").strip()
         search_query = f"{base_kw} {name}"
 
         log.debug("Searching: %r (max $%.2f)", search_query, max_price)
@@ -148,7 +149,7 @@ def poll_once(
             new_hits.append({"player": name, "listing": listing, "max_price": max_price})
 
             if not dry_run and webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
-                send_alert(webhook, name, listing, max_price)
+                send_alert(webhook, name, listing, max_price, note=note)
             elif dry_run:
                 log.info("[DRY RUN] Would alert Discord for: %s", title)
 

@@ -37,12 +37,29 @@ seen_ids_file: "seen_ids.txt"
 #   - Rookie Autograph variations
 players:
   - name: "Jaxson Dart"
-    max_price: 30.00
-    note: "RC — image variation / short print; base should be cheap so anything pricier that's unlabeled is suspicious"
+    max_price: 40.00
+    note: >
+      BASE = white away jersey, sideline laughing, helmet off, standard rainbow chrome border.
+      VARIATION = blue home jersey, in-game throwing pose, helmet ON, red/white/blue digital CAMO border pattern.
+      Sellers often list the camo variation as just 'Jaxson Dart RC' — check the image immediately.
 
   - name: "Malik Nabers"
     max_price: 20.00
-    note: "RC — image variation, negative refractor"
+    note: "RC — watch for image variation (different action photo vs base), negative refractor"
+
+  - name: "Luther Burden"
+    max_price: 20.00
+    note: >
+      BASE = white jersey, sideline catching/warm-up pose, rainbow chrome border.
+      Watch for image variation with different photo or non-standard border pattern.
+      Search uses 'Luther Burden' (no III) since sellers often drop the suffix.
+
+  - name: "Abdul Carter"
+    max_price: 20.00
+    note: >
+      BASE = Giants #51, holding helmet, white jersey, rainbow chrome border.
+      Watch for image variation (different photo/action) or any non-standard border.
+      Note: position listed as 'Edge' on base card — useful to confirm it's the right player.
 
 # ── Search configuration ──────────────────────────────────────────────────────
 # Keywords always added to every search query

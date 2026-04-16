@@ -25,6 +25,7 @@ def send_alert(
     player_name: str,
     listing: dict,
     max_price: float,
+    note: str = "",
 ) -> bool:
     """
     Post a Discord embed alert for a potential underpriced variation card.
@@ -61,7 +62,15 @@ def send_alert(
                 "name": "Listing Title",
                 "value": title[:256],  # Discord field value limit
                 "inline": False,
-            }
+            },
+            *(
+                [{
+                    "name": "What to check",
+                    "value": note[:1024],
+                    "inline": False,
+                }]
+                if note else []
+            ),
         ],
         "footer": {
             "text": "Card Sniper · Check image before buying · Variations are often mislabeled"
