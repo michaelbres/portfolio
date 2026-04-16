@@ -39,9 +39,10 @@ players:
   - name: "Jaxson Dart"
     max_price: 40.00
     note: >
-      BASE = white away jersey, sideline laughing, helmet off, standard rainbow chrome border.
-      VARIATION = blue home jersey, in-game throwing pose, helmet ON, red/white/blue digital CAMO border pattern.
-      Sellers often list the camo variation as just 'Jaxson Dart RC' — check the image immediately.
+      BASE = black background/border, blue home jersey, throwing pose, helmet ON — very dark card.
+      VARIATIONS = anything with a rainbow chrome border, white away jersey (sideline laughing, helmet off),
+      OR red/white/blue digital camo pixel border (different action photo).
+      If the listing image shows a bright/rainbow border or white jersey = variation, buy it.
 
   - name: "Malik Nabers"
     max_price: 20.00
@@ -50,16 +51,16 @@ players:
   - name: "Luther Burden"
     max_price: 20.00
     note: >
-      BASE = white jersey, sideline catching/warm-up pose, rainbow chrome border.
-      Watch for image variation with different photo or non-standard border pattern.
-      Search uses 'Luther Burden' (no III) since sellers often drop the suffix.
+      BASE = dark navy Bears home jersey, helmet ON, in-game running with ball, standard silver chrome border.
+      VARIATION = white away jersey, sideline/warm-up pose, no helmet visible, rainbow chrome border.
+      If the listing shows white jersey or no helmet = variation, buy it.
 
   - name: "Abdul Carter"
     max_price: 20.00
     note: >
-      BASE = Giants #51, holding helmet, white jersey, rainbow chrome border.
-      Watch for image variation (different photo/action) or any non-standard border.
-      Note: position listed as 'Edge' on base card — useful to confirm it's the right player.
+      BASE = blue Giants home jersey (#51), helmet ON, in-game running action, silver chrome border.
+      VARIATION = white away jersey, holding helmet (static pose), rainbow chrome border.
+      If the listing shows white jersey or player holding helmet = variation, buy it.
 
 # ── Search configuration ──────────────────────────────────────────────────────
 # Keywords always added to every search query
