@@ -36,41 +36,13 @@ seen_ids_file: "seen_ids.txt"
 #   - Negative Refractors, Shimmer, Cosmic
 #   - Rookie Autograph variations
 players:
-  - name: "Jayden Daniels"
-    max_price: 25.00
-    note: "RC — look for image variation, negative refractor"
-
-  - name: "Caleb Williams"
-    max_price: 25.00
-    note: "RC — look for image variation, different pose"
-
-  - name: "Drake Maye"
-    max_price: 20.00
-    note: "RC"
-
-  - name: "Marvin Harrison Jr"
-    max_price: 20.00
-    note: "RC — or use 'Marvin Harrison'"
-
-  - name: "Rome Odunze"
-    max_price: 15.00
-    note: "RC"
+  - name: "Jaxson Dart"
+    max_price: 30.00
+    note: "RC — image variation / short print; base should be cheap so anything pricier that's unlabeled is suspicious"
 
   - name: "Malik Nabers"
-    max_price: 15.00
-    note: "RC"
-
-  - name: "Brian Thomas Jr"
-    max_price: 12.00
-    note: "RC — often listed without 'Jr'"
-
-  - name: "Patrick Mahomes"
     max_price: 20.00
-    note: "Look for short print / image variation"
-
-  - name: "Josh Allen"
-    max_price: 15.00
-    note: "Image variation / SP"
+    note: "RC — image variation, negative refractor"
 
 # ── Search configuration ──────────────────────────────────────────────────────
 # Keywords always added to every search query
