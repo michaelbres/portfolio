@@ -30,37 +30,40 @@ seen_ids_file: "seen_ids.txt"
 #   max_price   - Alert if listed below this price (use null to use global_max_price)
 #   note        - Optional reminder about which variations to look for
 #
-# 2025 Topps Chrome NFL variation types to look for:
-#   - Superfractor (1/1), Gold Refractor (/50), Orange (/25), Red (/5)
-#   - Image Variation (color swap, different photo — often unlabeled)
-#   - Negative Refractors, Shimmer, Cosmic
-#   - Rookie Autograph variations
+# TWO variation types to snipe across all players:
+#   1. IMAGE VARIATION — completely different photo (away white jersey, sideline pose,
+#      no helmet), rainbow chrome border. Sellers list as plain base RC.
+#   2. LIGHT BOARD — same in-game action photo as base, BUT black background with
+#      a visible dotted/halftone grid pattern behind the player. Easy to miss.
 players:
   - name: "Jaxson Dart"
     max_price: 40.00
     note: >
-      BASE = black background/border, blue home jersey, throwing pose, helmet ON — very dark card.
-      VARIATIONS = anything with a rainbow chrome border, white away jersey (sideline laughing, helmet off),
-      OR red/white/blue digital camo pixel border (different action photo).
-      If the listing image shows a bright/rainbow border or white jersey = variation, buy it.
+      BASE = black solid background, blue home jersey, in-game throwing, helmet ON.
+      IMAGE VARIATION = rainbow chrome border, WHITE away jersey, sideline laughing, helmet OFF/holding helmet.
+      LIGHT BOARD = same throwing action photo BUT black dotted/halftone grid background (dot matrix behind player).
+      CAMO VARIATION = red/white/blue digital pixel camo border, blue jersey throwing — also a separate SP.
+      Any of the three are worth buying if listed as a plain base.
 
   - name: "Malik Nabers"
     max_price: 20.00
-    note: "RC — watch for image variation (different action photo vs base), negative refractor"
+    note: "RC — watch for image variation (away jersey/different pose) and light board (dot grid background). Send base card pic to update these notes."
 
   - name: "Luther Burden"
     max_price: 20.00
     note: >
-      BASE = dark navy Bears home jersey, helmet ON, in-game running with ball, standard silver chrome border.
-      VARIATION = white away jersey, sideline/warm-up pose, no helmet visible, rainbow chrome border.
-      If the listing shows white jersey or no helmet = variation, buy it.
+      BASE = standard silver chrome border, dark navy Bears home jersey, helmet ON, in-game running with ball, plain background.
+      IMAGE VARIATION = rainbow chrome border, WHITE away jersey, sideline pose, NO helmet, no number visible.
+      LIGHT BOARD = same in-game running action (navy jersey, helmet on) BUT black dotted/halftone grid background behind player.
+      Both variations are worth multiples of base — buy either if listed as plain base RC.
 
   - name: "Abdul Carter"
     max_price: 20.00
     note: >
-      BASE = blue Giants home jersey (#51), helmet ON, in-game running action, silver chrome border.
-      VARIATION = white away jersey, holding helmet (static pose), rainbow chrome border.
-      If the listing shows white jersey or player holding helmet = variation, buy it.
+      BASE = silver/gold chrome border, blue Giants home jersey #51, helmet ON, in-game running action, plain background.
+      IMAGE VARIATION = rainbow chrome border, WHITE away jersey #51, holding helmet, static sideline pose, face visible.
+      LIGHT BOARD = same in-game running action (blue jersey, helmet on) BUT black dotted/halftone grid background behind player.
+      Position label = 'Edge' on both base and variations. Buy either variation if listed as plain base RC.
 
 # ── Search configuration ──────────────────────────────────────────────────────
 # Keywords always added to every search query
