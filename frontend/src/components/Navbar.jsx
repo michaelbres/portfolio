@@ -16,37 +16,38 @@ export default function Navbar() {
     <nav
       className="sticky top-0 z-50"
       style={{
+        // Apple-style light frosted glass
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        backgroundColor: 'rgba(8, 8, 8, 0.85)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'rgba(255, 255, 255, 0.82)',
+        borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
       }}
     >
-      <div className="max-w-7xl mx-auto px-5 flex items-center gap-8 h-14">
+      <div className="max-w-5xl mx-auto px-6 flex items-center gap-8 h-12">
+
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2.5 shrink-0 group">
           <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm tracking-tight"
+            className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs tracking-tight"
             style={{
-              background: 'linear-gradient(135deg, #0EA5E9, #38BDF8)',
+              background: 'linear-gradient(135deg, #0066CC, #2563EB)',
               color: '#fff',
-              boxShadow: '0 0 12px rgba(14,165,233,0.35)',
+              boxShadow: '0 1px 4px rgba(0,102,204,0.25)',
             }}
           >
             MB
           </div>
           <span
             className="text-snow font-semibold text-sm tracking-tight hidden sm:block"
-            style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif' }}
+            style={{ letterSpacing: '-0.01em' }}
           >
             Breslow Analytics
           </span>
         </Link>
 
         {/* Nav links */}
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="flex items-center gap-0.5 ml-auto">
           {LINKS.map(({ to, label }) => {
-            // Exact match for home, prefix match for everything else
             const active =
               to === '/'
                 ? pathname === '/'
@@ -57,28 +58,17 @@ export default function Navbar() {
                 key={to}
                 to={to}
                 className={[
-                  'relative px-3.5 py-1.5 text-sm rounded-lg transition-colors duration-150',
+                  'relative px-3.5 py-1.5 text-sm rounded-full transition-all duration-200',
                   active
-                    ? 'text-electric'
+                    ? 'text-electric font-medium'
                     : 'text-mist hover:text-snow',
                 ].join(' ')}
                 style={{
-                  fontFamily:
-                    '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif',
-                  fontWeight: active ? 500 : 400,
-                  backgroundColor: active
-                    ? 'rgba(14, 165, 233, 0.10)'
-                    : undefined,
+                  backgroundColor: active ? 'rgba(0, 102, 204, 0.08)' : undefined,
+                  letterSpacing: '-0.01em',
                 }}
               >
                 {label}
-                {/* Active underline accent */}
-                {active && (
-                  <span
-                    className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full"
-                    style={{ background: '#0EA5E9', opacity: 0.7 }}
-                  />
-                )}
               </Link>
             )
           })}
