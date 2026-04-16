@@ -2,7 +2,16 @@
 # Monitors eBay for 2025 Topps Chrome NFL listings that may be mislabeled
 # variation cards priced as base cards.
 
-# Discord webhook URL for alerts
+# ── Notifications (configure at least one) ───────────────────────────────────
+
+# ntfy.sh — easiest option for phone alerts, zero account needed
+# 1. Install "ntfy" from App Store or Google Play
+# 2. Pick any unique topic name (treat it like a password — don't share it)
+# 3. In the app: tap + → enter your topic name → Subscribe
+# 4. Paste that same topic name here
+ntfy_topic: "PASTE_YOUR_TOPIC_NAME_HERE"   # e.g. "card-sniper-xyz789"
+
+# Discord webhook — rich embeds with card image + variation notes
 # Create one at: Server Settings → Integrations → Webhooks
 discord_webhook_url: "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
 
@@ -16,7 +25,7 @@ poll_interval_seconds: 60
 
 # Maximum price to alert on (dollars). Listings above this are skipped.
 # Per-player overrides below take precedence over this global cap.
-global_max_price: 30.00
+global_max_price: 30.00   # alert on anything under $30
 
 # Only alert on "Buy It Now" listings (excludes auctions where price rises)
 buy_it_now_only: true
@@ -37,7 +46,7 @@ seen_ids_file: "seen_ids.txt"
 #      a visible dotted/halftone grid pattern behind the player. Easy to miss.
 players:
   - name: "Jaxson Dart"
-    max_price: 40.00
+    max_price: 30.00
     note: >
       BASE = black solid background, blue home jersey, in-game throwing, helmet ON.
       IMAGE VARIATION = rainbow chrome border, WHITE away jersey, sideline laughing, helmet OFF/holding helmet.

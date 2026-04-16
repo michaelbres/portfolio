@@ -27,7 +27,10 @@ from pathlib import Path
 import yaml
 
 from ebay_client import EbayFindingClient
-from notifier import send_alert, send_startup_message
+from notifier import (
+    send_alert, send_startup_message,
+    send_ntfy_alert, send_ntfy_startup,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,6 +99,7 @@ def poll_once(
     buy_it_now_only = config.get("buy_it_now_only", True)
     exclude_kw = config.get("exclude_keywords", [])
     webhook = config.get("discord_webhook_url", "")
+    ntfy_topic = config.get("ntfy_topic", "")
     seen_path = config.get("seen_ids_file", "seen_ids.txt")
     players = config.get("players", [])
 
@@ -148,10 +152,13 @@ def poll_once(
             )
             new_hits.append({"player": name, "listing": listing, "max_price": max_price})
 
-            if not dry_run and webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
-                send_alert(webhook, name, listing, max_price, note=note)
+            if not dry_run:
+                if ntfy_topic:
+                    send_ntfy_alert(ntfy_topic, name, listing, max_price)
+                if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
+                    send_alert(webhook, name, listing, max_price, note=note)
             elif dry_run:
-                log.info("[DRY RUN] Would alert Discord for: %s", title)
+                log.info("[DRY RUN] Would alert for: %s", title)
 
     return new_hits
 
@@ -168,12 +175,12 @@ def main():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print matches but do NOT send Discord alerts",
+        help="Print matches but do NOT send any alerts",
     )
     parser.add_argument(
-        "--test-discord",
+        "--test-notify",
         action="store_true",
-        help="Send a test Discord message and exit",
+        help="Send a test notification via all configured channels and exit",
     )
     parser.add_argument(
         "--once",
@@ -196,6 +203,7 @@ def main():
 
     ebay_app_id = config.get("ebay_app_id", "")
     webhook = config.get("discord_webhook_url", "")
+    ntfy_topic = config.get("ntfy_topic", "")
     poll_interval = int(config.get("poll_interval_seconds", 60))
     players = config.get("players", [])
 
@@ -203,14 +211,21 @@ def main():
         log.error("Set ebay_app_id in %s first.", args.config)
         sys.exit(1)
 
-    # ── Test Discord ────────────────────────────────────────────────────────────
-    if args.test_discord:
-        if not webhook or webhook == "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
-            log.error("Set discord_webhook_url in %s first.", args.config)
+    # ── Test notifications ──────────────────────────────────────────────────────
+    if args.test_notify:
+        sent = False
+        if ntfy_topic:
+            log.info("Sending test ntfy push to topic '%s'...", ntfy_topic)
+            send_ntfy_startup(ntfy_topic, ["[TEST] Jaxson Dart", "[TEST] Abdul Carter"])
+            sent = True
+        if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
+            log.info("Sending test Discord message...")
+            send_startup_message(webhook, ["[TEST] Jaxson Dart", "[TEST] Abdul Carter"])
+            sent = True
+        if not sent:
+            log.error("No notification channels configured. Set ntfy_topic or discord_webhook_url in %s", args.config)
             sys.exit(1)
-        log.info("Sending test Discord message...")
-        send_startup_message(webhook, ["[TEST] Jayden Daniels", "[TEST] Caleb Williams"])
-        log.info("Done. Check your Discord channel.")
+        log.info("Done. Check your phone/Discord.")
         return
 
     # ── Init ────────────────────────────────────────────────────────────────────
@@ -222,8 +237,11 @@ def main():
         len(seen_ids),
     )
 
-    if not args.dry_run and webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
-        send_startup_message(webhook, [p["name"] for p in players])
+    if not args.dry_run:
+        if ntfy_topic:
+            send_ntfy_startup(ntfy_topic, [p["name"] for p in players])
+        if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
+            send_startup_message(webhook, [p["name"] for p in players])
 
     if args.once:
         poll_once(config, client, seen_ids, dry_run=args.dry_run)
