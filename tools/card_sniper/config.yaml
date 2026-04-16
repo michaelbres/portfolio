@@ -1,0 +1,88 @@
+# ── Card Sniper Configuration ─────────────────────────────────────────────────
+# Monitors eBay for 2025 Topps Chrome NFL listings that may be mislabeled
+# variation cards priced as base cards.
+
+# Discord webhook URL for alerts
+# Create one at: Server Settings → Integrations → Webhooks
+discord_webhook_url: "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
+
+# eBay App ID (Client ID from developer.ebay.com)
+# Free to register — only needs Finding API (no OAuth required for searches)
+ebay_app_id: "PASTE_YOUR_EBAY_APP_ID_HERE"
+
+# How often to check for new listings (seconds)
+# eBay limits: ~5000 calls/day on free tier → safe floor is 60s
+poll_interval_seconds: 60
+
+# Maximum price to alert on (dollars). Listings above this are skipped.
+# Per-player overrides below take precedence over this global cap.
+global_max_price: 30.00
+
+# Only alert on "Buy It Now" listings (excludes auctions where price rises)
+buy_it_now_only: true
+
+# Listings seen in this file won't re-alert on restart
+seen_ids_file: "seen_ids.txt"
+
+# ── Players to watch ──────────────────────────────────────────────────────────
+# Each entry needs:
+#   name        - Player name as it would appear in an eBay listing title
+#   max_price   - Alert if listed below this price (use null to use global_max_price)
+#   note        - Optional reminder about which variations to look for
+#
+# 2025 Topps Chrome NFL variation types to look for:
+#   - Superfractor (1/1), Gold Refractor (/50), Orange (/25), Red (/5)
+#   - Image Variation (color swap, different photo — often unlabeled)
+#   - Negative Refractors, Shimmer, Cosmic
+#   - Rookie Autograph variations
+players:
+  - name: "Jayden Daniels"
+    max_price: 25.00
+    note: "RC — look for image variation, negative refractor"
+
+  - name: "Caleb Williams"
+    max_price: 25.00
+    note: "RC — look for image variation, different pose"
+
+  - name: "Drake Maye"
+    max_price: 20.00
+    note: "RC"
+
+  - name: "Marvin Harrison Jr"
+    max_price: 20.00
+    note: "RC — or use 'Marvin Harrison'"
+
+  - name: "Rome Odunze"
+    max_price: 15.00
+    note: "RC"
+
+  - name: "Malik Nabers"
+    max_price: 15.00
+    note: "RC"
+
+  - name: "Brian Thomas Jr"
+    max_price: 12.00
+    note: "RC — often listed without 'Jr'"
+
+  - name: "Patrick Mahomes"
+    max_price: 20.00
+    note: "Look for short print / image variation"
+
+  - name: "Josh Allen"
+    max_price: 15.00
+    note: "Image variation / SP"
+
+# ── Search configuration ──────────────────────────────────────────────────────
+# Keywords always added to every search query
+base_keywords: "2025 Topps Chrome NFL"
+
+# Keywords that must NOT be in the listing title (case-insensitive)
+# Helps filter obvious junk
+exclude_keywords:
+  - "lot"
+  - "repack"
+  - "mystery"
+  - "custom"
+  - "copy"
+  - "reproduction"
+  - "fake"
