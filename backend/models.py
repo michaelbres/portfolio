@@ -325,3 +325,78 @@ class FairValueCalibration(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# ── HR Fair Value Model Tables ────────────────────────────────────────────────
+
+class HRFairValueGame(Base):
+    """One row per game per HR model run. Game-level HR aggregates."""
+    __tablename__ = "hr_fair_value_games"
+
+    id = Column(Integer, primary_key=True)
+    game_pk = Column(BigInteger, unique=True, index=True, nullable=False)
+    game_date = Column(Date, index=True, nullable=False)
+    game_time_utc = Column(String(30))
+    home_team = Column(String(10), nullable=False)
+    away_team = Column(String(10), nullable=False)
+    venue = Column(String(100))
+
+    home_sp_id = Column(Integer)
+    home_sp_name = Column(String(100))
+    home_sp_hand = Column(String(2))
+    away_sp_id = Column(Integer)
+    away_sp_name = Column(String(100))
+    away_sp_hand = Column(String(2))
+
+    park_hr_factor = Column(Float)
+    weather_hr_factor = Column(Float)
+
+    home_team_hr_lambda = Column(Float)
+    away_team_hr_lambda = Column(Float)
+    game_total_hr_lambda = Column(Float)
+    home_team_hr_prob = Column(Float)
+    away_team_hr_prob = Column(Float)
+
+    model_version = Column(String(20), default="1.0")
+    computed_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class HRFairValuePlayer(Base):
+    """One row per batter per game. Player-level HR probabilities."""
+    __tablename__ = "hr_fair_value_players"
+
+    id = Column(Integer, primary_key=True)
+    game_pk = Column(BigInteger, index=True, nullable=False)
+    team = Column(String(10), nullable=False)
+    is_home = Column(Boolean, default=False)
+    batting_order = Column(Integer, nullable=False)
+    player_id = Column(Integer, index=True)
+    player_name = Column(String(100))
+    batter_hand = Column(String(2))
+    vs_pitcher_hand = Column(String(2))
+
+    hr_rate_full = Column(Float)
+    hr_rate_recent = Column(Float)
+    hr_rate_blended = Column(Float)
+    pa_full = Column(Integer)
+    pa_recent = Column(Integer)
+
+    pitcher_hr_factor = Column(Float)
+    park_hr_factor = Column(Float)
+    weather_hr_factor = Column(Float)
+    expected_pa = Column(Float)
+    hr_lambda = Column(Float)
+
+    model_hr_prob = Column(Float)
+    fair_hr_odds = Column(Integer)
+
+    market_hr_prob = Column(Float)
+    market_hr_odds = Column(Integer)
+    market_source = Column(String(50))
+    edge_pp = Column(Float)
+
+    __table_args__ = (
+        UniqueConstraint("game_pk", "team", "batting_order",
+                         name="uq_hr_player_slot"),
+    )

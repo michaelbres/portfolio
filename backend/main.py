@@ -6,6 +6,7 @@ from sqlalchemy import text
 from database import engine, Base
 from routers import mlb
 from routers import fair_value
+from routers import hr_fair_value
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ app.add_middleware(
 
 app.include_router(mlb.router)
 app.include_router(fair_value.router)
+app.include_router(hr_fair_value.router)
 
 
 @app.get("/health")

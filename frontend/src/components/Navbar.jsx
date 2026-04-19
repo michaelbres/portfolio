@@ -5,6 +5,7 @@ const LINKS = [
   { to: '/',                        label: 'Home' },
   { to: '/sports',                  label: 'Sports Analytics' },
   { to: '/sports/mlb/fair-value',   label: 'Fair Value' },
+  { to: '/sports/mlb/hr-fair-value', label: 'HR Props' },
   { to: '/sports/mlb/stuff-plus',   label: 'Stuff+' },
   { to: '/betting',                 label: 'Betting' },
 ]

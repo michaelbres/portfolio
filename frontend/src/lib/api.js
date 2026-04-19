@@ -25,4 +25,10 @@ export const fairValue = {
   stuffPlusLeaderboard: (params) => api.get('/api/fair-value/stuff-plus/leaderboard', { params }),
 }
 
+export const hrFairValue = {
+  games: (params) => api.get('/api/hr-fair-value/games', { params }),
+  game: (gamePk) => api.get(`/api/hr-fair-value/games/${gamePk}`),
+  run: (params) => api.post('/api/hr-fair-value/run', null, { params }),
+}
+
 export default api
