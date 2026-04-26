@@ -55,8 +55,8 @@ function EdgeBadge({ modelOdds, marketOdds }) {
       className="text-xs font-semibold px-2 py-0.5 rounded-full"
       style={
         isPos
-          ? { background: 'rgba(16,185,129,0.15)', color: '#34D399', border: '1px solid rgba(16,185,129,0.25)' }
-          : { background: 'rgba(239,68,68,0.12)', color: '#F87171', border: '1px solid rgba(239,68,68,0.20)' }
+          ? { background: 'rgba(40,205,65,0.10)', color: '#027A48', border: '1px solid rgba(40,205,65,0.25)' }
+          : { background: 'rgba(239,68,68,0.08)', color: '#B42318', border: '1px solid rgba(239,68,68,0.20)' }
       }
     >
       {isPos ? '+' : ''}{edge.toFixed(1)}pp vs mkt
@@ -116,14 +116,14 @@ function PitchInput({ gamePk, side, defaultLimit, isManual, onUpdate }) {
         style={
           isManual
             ? {
-                border: '1px solid rgba(14,165,233,0.40)',
-                background: 'rgba(14,165,233,0.08)',
-                color: '#38BDF8',
+                border: '1px solid rgba(0,102,204,0.40)',
+                background: 'rgba(0,102,204,0.08)',
+                color: '#0066CC',
               }
             : {
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: '#1C1C1E',
-                color: '#F5F5F7',
+                border: '1px solid rgba(0,0,0,0.12)',
+                background: '#FFFFFF',
+                color: '#1D1D1F',
               }
         }
         title="Pitch count limit — press Enter or click away to apply"
@@ -132,7 +132,10 @@ function PitchInput({ gamePk, side, defaultLimit, isManual, onUpdate }) {
         <button
           onClick={handleReset}
           disabled={saving}
-          className="text-xs text-mist hover:text-red-400 transition-colors duration-150"
+          className="text-xs transition-colors duration-150"
+          style={{ color: '#86868B' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#B42318'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#86868B'}
           title="Remove override"
         >
           ✕
@@ -163,15 +166,15 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-xs uppercase tracking-wider text-mist w-12 shrink-0">{label}</span>
-        <span className="font-semibold text-sm text-snow truncate">{name || 'TBD'}</span>
+        <span className="text-xs uppercase tracking-wider w-12 shrink-0" style={{ color: '#86868B' }}>{label}</span>
+        <span className="font-semibold text-sm truncate" style={{ color: '#1D1D1F' }}>{name || 'TBD'}</span>
         {conf === 'none' && (
           <span
             className="text-xs px-1.5 py-0.5 rounded font-bold"
             style={{
-              background: 'rgba(239,68,68,0.15)',
+              background: 'rgba(239,68,68,0.08)',
               border: '1px solid rgba(239,68,68,0.25)',
-              color: '#F87171',
+              color: '#B42318',
             }}
           >
             NO DATA
@@ -181,9 +184,9 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
           <span
             className="text-xs px-1.5 py-0.5 rounded"
             style={{
-              background: 'rgba(249,115,22,0.12)',
-              border: '1px solid rgba(249,115,22,0.20)',
-              color: '#FB923C',
+              background: 'rgba(249,115,22,0.10)',
+              border: '1px solid rgba(249,115,22,0.25)',
+              color: '#93370D',
             }}
           >
             thin sample
@@ -194,20 +197,20 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
             className="text-xs px-1.5 py-0.5 rounded"
             style={{
               background: 'rgba(234,179,8,0.10)',
-              border: '1px solid rgba(234,179,8,0.18)',
-              color: '#FCD34D',
+              border: '1px solid rgba(234,179,8,0.25)',
+              color: '#854708',
             }}
           >
             limited
           </span>
         )}
         {hand && (
-          <span className="text-xs text-mist ml-auto shrink-0">{hand}HP</span>
+          <span className="text-xs ml-auto shrink-0" style={{ color: '#86868B' }}>{hand}HP</span>
         )}
       </div>
       <div className="flex items-center gap-3 pl-14">
-        <div className="flex items-center gap-1 text-xs text-mist">
-          <span className="text-mist" style={{ opacity: 0.6 }}>Limit:</span>
+        <div className="flex items-center gap-1 text-xs" style={{ color: '#86868B' }}>
+          <span style={{ opacity: 0.7 }}>Limit:</span>
           <PitchInput
             gamePk={gamePk}
             side={side}
@@ -216,23 +219,26 @@ function SPRow({ label, name, hand, pitchLimit, isManual, projInn,
             onUpdate={onUpdate}
           />
         </div>
-        <div className="text-xs text-mist">
-          <span style={{ opacity: 0.6 }}>Inn:</span>{' '}
-          <span className="font-mono text-snow">{fmtInn(projInn)}</span>
+        <div className="text-xs" style={{ color: '#86868B' }}>
+          <span style={{ opacity: 0.7 }}>Inn:</span>{' '}
+          <span className="font-mono" style={{ color: '#1D1D1F' }}>{fmtInn(projInn)}</span>
         </div>
         {xfip != null ? (
-          <div className="text-xs text-mist">
-            <span style={{ opacity: 0.6 }}>xFIP:</span>{' '}
-            <span className={`font-mono font-semibold ${
-              conf !== 'good' ? 'text-orange-400' : 'text-snow'
-            }`}>{xfip}</span>
-            <span className="text-mist ml-1" style={{ opacity: 0.6 }}>({paSeason ?? 0} PA)</span>
+          <div className="text-xs" style={{ color: '#86868B' }}>
+            <span style={{ opacity: 0.7 }}>xFIP:</span>{' '}
+            <span
+              className="font-mono font-semibold"
+              style={{ color: conf !== 'good' ? '#93370D' : '#1D1D1F' }}
+            >
+              {xfip}
+            </span>
+            <span className="ml-1" style={{ opacity: 0.7 }}>({paSeason ?? 0} PA)</span>
           </div>
         ) : (
-          <div className="text-xs text-mist">
-            <span style={{ opacity: 0.6 }}>wOBA:</span>{' '}
-            <span className="font-mono text-snow">{fmtWoba(wobaBlended)}</span>
-            <span className="text-mist ml-1" style={{ opacity: 0.6 }}>({paSeason ?? 0} PA)</span>
+          <div className="text-xs" style={{ color: '#86868B' }}>
+            <span style={{ opacity: 0.7 }}>wOBA:</span>{' '}
+            <span className="font-mono" style={{ color: '#1D1D1F' }}>{fmtWoba(wobaBlended)}</span>
+            <span className="ml-1" style={{ opacity: 0.7 }}>({paSeason ?? 0} PA)</span>
           </div>
         )}
       </div>
@@ -253,48 +259,47 @@ function TotalsRow({ modelTotal, kalshiLine, kalshiOverPrice, modelOverProb }) {
     const diff = modelOverProb - kalshiOverPrice
     if (Math.abs(diff) >= 0.04) {
       signal = diff > 0
-        ? { text: `Model leans OVER ${kalshiLine}`, color: '#34D399' }
-        : { text: `Model leans UNDER ${kalshiLine}`, color: '#F87171' }
+        ? { text: `Model leans OVER ${kalshiLine}`, color: '#027A48', bg: 'rgba(40,205,65,0.10)' }
+        : { text: `Model leans UNDER ${kalshiLine}`, color: '#B42318', bg: 'rgba(239,68,68,0.08)' }
     }
   }
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-      <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>Totals</span>
+      <span className="uppercase tracking-wider" style={{ color: '#86868B', opacity: 0.85 }}>Totals</span>
 
       {/* Model total */}
-      <div className="flex items-center gap-1 text-mist">
-        <span style={{ opacity: 0.6 }}>Model:</span>
-        <span className="font-mono font-semibold text-snow">{modelTotal?.toFixed(1)} runs</span>
+      <div className="flex items-center gap-1" style={{ color: '#86868B' }}>
+        <span style={{ opacity: 0.75 }}>Model:</span>
+        <span className="font-mono font-semibold" style={{ color: '#1D1D1F' }}>{modelTotal?.toFixed(1)} runs</span>
       </div>
 
       {/* Kalshi line */}
       {hasKalshi ? (
         <>
-          <div className="flex items-center gap-1 text-mist">
-            <span style={{ opacity: 0.6 }}>Kalshi O/U:</span>
-            <span className="font-mono font-semibold text-snow">{kalshiLine}</span>
+          <div className="flex items-center gap-1" style={{ color: '#86868B' }}>
+            <span style={{ opacity: 0.75 }}>Kalshi O/U:</span>
+            <span className="font-mono font-semibold" style={{ color: '#1D1D1F' }}>{kalshiLine}</span>
           </div>
-          <div className="flex items-center gap-1 text-mist">
-            <span style={{ opacity: 0.6 }}>Over:</span>
-            <span className="font-mono text-snow">
+          <div className="flex items-center gap-1" style={{ color: '#86868B' }}>
+            <span style={{ opacity: 0.75 }}>Over:</span>
+            <span className="font-mono" style={{ color: '#1D1D1F' }}>
               {fmtOdds(Math.round(kalshiOverPrice >= 0.5
                 ? -kalshiOverPrice / (1 - kalshiOverPrice) * 100
                 : (1 - kalshiOverPrice) / kalshiOverPrice * 100))}
             </span>
           </div>
           {modelOverProb != null && (
-            <div className="flex items-center gap-1 text-mist">
-              <span style={{ opacity: 0.6 }}>Model over:</span>
-              <span className="font-mono text-snow">{fmtPct(modelOverProb)}</span>
+            <div className="flex items-center gap-1" style={{ color: '#86868B' }}>
+              <span style={{ opacity: 0.75 }}>Model over:</span>
+              <span className="font-mono" style={{ color: '#1D1D1F' }}>{fmtPct(modelOverProb)}</span>
             </div>
           )}
           {signal && (
             <span
               className="font-semibold px-2 py-0.5 rounded-full text-[11px]"
               style={{
-                background: signal.color === '#34D399'
-                  ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.10)',
+                background: signal.bg,
                 border: `1px solid ${signal.color}33`,
                 color: signal.color,
               }}
@@ -304,7 +309,7 @@ function TotalsRow({ modelTotal, kalshiLine, kalshiOverPrice, modelOverProb }) {
           )}
         </>
       ) : (
-        <span className="text-mist" style={{ opacity: 0.5 }}>no Kalshi line</span>
+        <span style={{ color: '#86868B', opacity: 0.6 }}>no Kalshi line</span>
       )}
     </div>
   )
@@ -320,7 +325,7 @@ function movementArrow(openingOdds, currentOdds) {
   return {
     dir: delta > 0 ? '▲' : '▼',
     delta: Math.abs(delta).toFixed(1),
-    color: delta > 0 ? '#34D399' : '#F87171',  // green = moved toward this team
+    color: delta > 0 ? '#027A48' : '#B42318',
   }
 }
 
@@ -332,39 +337,44 @@ function OddsPanel({ team, winProb, fairOdds, marketOdds, openingOdds, lambda, i
       style={
         isFavorite
           ? {
-              background: 'rgba(239,68,68,0.08)',
-              border: '1px solid rgba(239,68,68,0.20)',
+              background: 'rgba(239,68,68,0.06)',
+              border: '1px solid rgba(239,68,68,0.22)',
             }
           : {
-              background: '#1C1C1E',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: '#F5F5F7',
+              border: '1px solid rgba(0,0,0,0.08)',
             }
       }
     >
-      <span className="font-semibold text-snow text-base leading-none tracking-tight">{team}</span>
+      <span
+        className="font-semibold text-base leading-none tracking-tight"
+        style={{ color: '#1D1D1F' }}
+      >
+        {team}
+      </span>
       <span
         className="font-semibold text-2xl leading-none mt-1"
-        style={{ color: isFavorite ? '#F87171' : '#F5F5F7' }}
+        style={{ color: isFavorite ? '#B42318' : '#1D1D1F' }}
       >
         {fmtOdds(fairOdds)}
       </span>
-      <span className="text-xs text-mist">{fmtPct(winProb)}</span>
-      <span className="text-xs text-mist font-mono" style={{ opacity: 0.6 }}>λ {lambda?.toFixed(2)}</span>
+      <span className="text-xs" style={{ color: '#86868B' }}>{fmtPct(winProb)}</span>
+      <span className="text-xs font-mono" style={{ color: '#86868B', opacity: 0.75 }}>λ {lambda?.toFixed(2)}</span>
       {marketOdds != null && (
         <div
           className="flex flex-col items-center gap-0.5 mt-1 pt-1 w-full"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}
+          style={{ borderTop: '1px solid rgba(0,0,0,0.08)' }}
         >
           <div className="flex items-center gap-1">
             {isLive && (
               <span
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
-                style={{ background: 'rgba(14,165,233,0.15)', color: '#0EA5E9' }}
+                style={{ background: 'rgba(0,102,204,0.10)', color: '#0066CC' }}
               >
                 LIVE
               </span>
             )}
-            <span className="text-xs text-mist font-mono font-semibold">{fmtOdds(marketOdds)}</span>
+            <span className="text-xs font-mono font-semibold" style={{ color: '#86868B' }}>{fmtOdds(marketOdds)}</span>
             {mv && (
               <span className="text-[10px] font-bold" style={{ color: mv.color }}>
                 {mv.dir}{mv.delta}pp
@@ -372,7 +382,7 @@ function OddsPanel({ team, winProb, fairOdds, marketOdds, openingOdds, lambda, i
             )}
           </div>
           {openingOdds != null && openingOdds !== marketOdds && (
-            <span className="text-[10px] text-mist" style={{ opacity: 0.55 }}>
+            <span className="text-[10px]" style={{ color: '#86868B', opacity: 0.7 }}>
               open {fmtOdds(openingOdds)}
             </span>
           )}
@@ -408,15 +418,15 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
   const lineupLabel = (src) => {
     if (src === 'confirmed') return {
       text: 'Confirmed',
-      style: { background: 'rgba(16,185,129,0.12)', color: '#34D399', border: '1px solid rgba(16,185,129,0.22)' },
+      style: { background: 'rgba(40,205,65,0.10)', color: '#027A48', border: '1px solid rgba(40,205,65,0.25)' },
     }
     if (src === 'projected') return {
       text: 'Projected',
-      style: { background: 'rgba(234,179,8,0.10)', color: '#FCD34D', border: '1px solid rgba(234,179,8,0.18)' },
+      style: { background: 'rgba(234,179,8,0.10)', color: '#854708', border: '1px solid rgba(234,179,8,0.25)' },
     }
     return {
       text: 'Est.',
-      style: { background: 'rgba(255,255,255,0.06)', color: '#86868B', border: '1px solid rgba(255,255,255,0.10)' },
+      style: { background: '#F5F5F7', color: '#86868B', border: '1px solid rgba(0,0,0,0.08)' },
     }
   }
 
@@ -425,32 +435,33 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
 
   return (
     <div
-      className="bg-surface rounded-2xl overflow-hidden"
+      className="rounded-2xl overflow-hidden"
       style={{
-        border: '1px solid rgba(255,255,255,0.08)',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+        background: '#FFFFFF',
+        border: '1px solid rgba(0,0,0,0.08)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04)',
       }}
     >
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-2.5"
-        style={{ background: '#1C1C1E', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        style={{ background: '#F5F5F7', borderBottom: '1px solid rgba(0,0,0,0.08)' }}
       >
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-snow text-sm tracking-tight">
-            {game.away_team} <span className="text-mist font-normal">@</span> {game.home_team}
+          <span className="font-semibold text-sm tracking-tight" style={{ color: '#1D1D1F' }}>
+            {game.away_team} <span className="font-normal" style={{ color: '#86868B' }}>@</span> {game.home_team}
           </span>
-          <span className="text-xs text-mist" style={{ opacity: 0.7 }}>{game.venue}</span>
+          <span className="text-xs" style={{ color: '#86868B', opacity: 0.85 }}>{game.venue}</span>
         </div>
         <div className="flex items-center gap-2">
-          {gameTime && <span className="text-xs text-mist">{gameTime}</span>}
+          {gameTime && <span className="text-xs" style={{ color: '#86868B' }}>{gameTime}</span>}
           {weather && (
             <span
               className="text-xs px-2 py-0.5 rounded-full font-semibold"
               style={
                 weather.hot
-                  ? { background: 'rgba(249,115,22,0.15)', color: '#FB923C' }
-                  : { background: 'rgba(14,165,233,0.12)', color: '#38BDF8' }
+                  ? { background: 'rgba(249,115,22,0.12)', color: '#93370D' }
+                  : { background: 'rgba(0,102,204,0.10)', color: '#0066CC' }
               }
             >
               {weather.text}
@@ -459,9 +470,9 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
           <span
             className="text-xs px-2 py-0.5 rounded-full"
             style={{
-              background: 'rgba(255,255,255,0.06)',
+              background: '#FFFFFF',
               color: '#86868B',
-              border: '1px solid rgba(255,255,255,0.08)',
+              border: '1px solid rgba(0,0,0,0.08)',
             }}
           >
             PF {game.park_factor?.toFixed(2)}
@@ -482,7 +493,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
             isFavorite={!homeIsFav}
             isLive={isLive}
           />
-          <span className="text-xl text-mist font-light" style={{ opacity: 0.4 }}>vs</span>
+          <span className="text-xl font-light" style={{ color: '#86868B', opacity: 0.5 }}>vs</span>
           <OddsPanel
             team={game.home_team}
             winProb={game.home_win_prob}
@@ -498,7 +509,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
         {/* Pitcher details */}
         <div
           className="pt-3 flex flex-col gap-3"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
         >
           <SPRow
             label="Away SP"
@@ -535,57 +546,57 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
         {/* Lineup + bullpen */}
         <div
           className="pt-3 grid grid-cols-2 gap-3 text-xs"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
         >
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>
+              <span className="uppercase tracking-wider" style={{ color: '#86868B', opacity: 0.85 }}>
                 {game.away_team} Lineup
               </span>
               <span className="px-1.5 py-0.5 text-xs font-semibold rounded" style={awayLineup.style}>
                 {awayLineup.text}
               </span>
             </div>
-            <div className="font-mono text-mist">
-              wOBA <span className="font-bold text-snow">{fmtWoba(game.away_lineup_woba)}</span>
+            <div className="font-mono" style={{ color: '#86868B' }}>
+              wOBA <span className="font-bold" style={{ color: '#1D1D1F' }}>{fmtWoba(game.away_lineup_woba)}</span>
             </div>
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>
+              <span className="uppercase tracking-wider" style={{ color: '#86868B', opacity: 0.85 }}>
                 {game.home_team} Lineup
               </span>
               <span className="px-1.5 py-0.5 text-xs font-semibold rounded" style={homeLineup.style}>
                 {homeLineup.text}
               </span>
             </div>
-            <div className="font-mono text-mist">
-              wOBA <span className="font-bold text-snow">{fmtWoba(game.home_lineup_woba)}</span>
+            <div className="font-mono" style={{ color: '#86868B' }}>
+              wOBA <span className="font-bold" style={{ color: '#1D1D1F' }}>{fmtWoba(game.home_lineup_woba)}</span>
             </div>
           </div>
 
           {/* Bullpen */}
           <div className="flex flex-col gap-0.5">
-            <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>
+            <span className="uppercase tracking-wider" style={{ color: '#86868B', opacity: 0.85 }}>
               {game.away_team} Bullpen
             </span>
-            <div className="font-mono text-mist">
+            <div className="font-mono" style={{ color: '#86868B' }}>
               wOBA {fmtWoba(game.away_bp_woba_fatigued)}
               {game.away_bp_woba_fatigued !== game.away_bp_woba_raw && (
-                <span className="text-mist ml-1" style={{ opacity: 0.5 }}>
+                <span className="ml-1" style={{ opacity: 0.6 }}>
                   (raw {fmtWoba(game.away_bp_woba_raw)})
                 </span>
               )}
             </div>
           </div>
           <div className="flex flex-col gap-0.5">
-            <span className="text-mist uppercase tracking-wider" style={{ opacity: 0.7 }}>
+            <span className="uppercase tracking-wider" style={{ color: '#86868B', opacity: 0.85 }}>
               {game.home_team} Bullpen
             </span>
-            <div className="font-mono text-mist">
+            <div className="font-mono" style={{ color: '#86868B' }}>
               wOBA {fmtWoba(game.home_bp_woba_fatigued)}
               {game.home_bp_woba_fatigued !== game.home_bp_woba_raw && (
-                <span className="text-mist ml-1" style={{ opacity: 0.5 }}>
+                <span className="ml-1" style={{ opacity: 0.6 }}>
                   (raw {fmtWoba(game.home_bp_woba_raw)})
                 </span>
               )}
@@ -597,7 +608,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
         {game.model_total != null && (
           <div
             className="pt-3"
-            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+            style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}
           >
             <TotalsRow
               modelTotal={game.model_total}
@@ -610,8 +621,8 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
 
         {/* Footer */}
         <div
-          className="flex items-center justify-between text-xs text-mist pt-2"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)', opacity: 0.7 }}
+          className="flex items-center justify-between text-xs pt-2"
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)', color: '#86868B', opacity: 0.8 }}
         >
           <span>v{game.model_version}</span>
           <div className="flex items-center gap-2">
@@ -619,7 +630,7 @@ export default function GameFairValueCard({ game: initialGame, liveOdds = null }
               <span className="flex items-center gap-1">
                 <span
                   className="font-bold text-[10px] px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'rgba(14,165,233,0.15)', color: '#0EA5E9' }}
+                  style={{ background: 'rgba(0,102,204,0.10)', color: '#0066CC' }}
                 >
                   LIVE
                 </span>

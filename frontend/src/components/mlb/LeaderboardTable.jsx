@@ -1,18 +1,14 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { savantColor, percentileRank } from '../../lib/savantColor'
 
-// Color scale: red (high) → blue (low), dark-theme compatible
-function valueColor(val, min, max, higherIsBetter = true) {
-  if (val == null || min == null || max == null || min === max) return ''
-  const pct = (val - min) / (max - min)
-  const adjusted = higherIsBetter ? pct : 1 - pct
-  if (adjusted >= 0.85) return 'bg-red-900/40 text-red-300 font-semibold'
-  if (adjusted >= 0.65) return 'bg-orange-900/20 text-orange-300'
-  if (adjusted <= 0.15) return 'bg-blue-900/40 text-blue-300 font-semibold'
-  if (adjusted <= 0.35) return 'bg-sky-900/20 text-sky-300'
-  return ''
-}
-
+/**
+ * Baseball Savant-style leaderboard table.
+ *
+ * Columns flagged with `colorScale: true` get a diverging red↔blue percentile
+ * gradient per column. `higherIsBetter` flips the scale for negative stats
+ * like xwOBA allowed.
+ */
 export default function LeaderboardTable({ rows = [], columns = [], defaultSort, linkTo }) {
   const [sortKey, setSortKey] = useState(defaultSort || columns[0]?.key)
   const [sortDir, setSortDir] = useState('desc')
@@ -22,22 +18,29 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
     else { setSortKey(key); setSortDir('desc') }
   }
 
-  const sorted = [...rows].sort((a, b) => {
-    const av = a[sortKey]
-    const bv = b[sortKey]
-    if (av == null) return 1
-    if (bv == null) return -1
-    return sortDir === 'desc' ? bv - av : av - bv
-  })
+  const sorted = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return sortDir === 'desc' ? bv.localeCompare(av) : av.localeCompare(bv)
+      }
+      return sortDir === 'desc' ? bv - av : av - bv
+    })
+  }, [rows, sortKey, sortDir])
 
-  // Pre-compute min/max for each numeric column
-  const ranges = {}
-  columns.forEach((col) => {
-    if (col.colorScale) {
-      const vals = rows.map((r) => r[col.key]).filter((v) => v != null)
-      ranges[col.key] = { min: Math.min(...vals), max: Math.max(...vals) }
-    }
-  })
+  // Pre-sort each numeric column for percentile computation
+  const colRanges = useMemo(() => {
+    const r = {}
+    columns.forEach((col) => {
+      if (col.colorScale) {
+        const vals = rows.map((row) => row[col.key]).filter((v) => v != null).sort((a, b) => a - b)
+        r[col.key] = vals
+      }
+    })
+    return r
+  }, [rows, columns])
 
   return (
     <div className="overflow-x-auto">
@@ -45,42 +48,52 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
         <thead>
           <tr>
             <th className="w-8 text-center">#</th>
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                onClick={() => handleSort(col.key)}
-                style={sortKey === col.key ? { background: 'rgba(14,165,233,0.20)', color: '#0EA5E9' } : {}}
-                title={col.description}
-              >
-                <span className="flex items-center gap-1">
-                  {col.label}
-                  {sortKey === col.key && (
-                    <span className="opacity-70 text-xs">{sortDir === 'desc' ? '▼' : '▲'}</span>
-                  )}
-                </span>
-              </th>
-            ))}
+            {columns.map((col) => {
+              const isActive = sortKey === col.key
+              return (
+                <th
+                  key={col.key}
+                  onClick={() => handleSort(col.key)}
+                  title={col.description}
+                  style={
+                    isActive
+                      ? { background: 'rgba(0,102,204,0.10)', color: '#0066CC' }
+                      : undefined
+                  }
+                >
+                  <span className="flex items-center gap-1">
+                    {col.label}
+                    {isActive && (
+                      <span className="opacity-70 text-xs">{sortDir === 'desc' ? '▼' : '▲'}</span>
+                    )}
+                  </span>
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
           {sorted.map((row, i) => (
             <tr key={i}>
-              <td className="text-center text-mist text-xs">{i + 1}</td>
+              <td className="text-center text-xs" style={{ color: '#86868B' }}>{i + 1}</td>
               {columns.map((col) => {
                 const val = row[col.key]
-                const colorClass = col.colorScale
-                  ? valueColor(val, ranges[col.key]?.min, ranges[col.key]?.max, col.higherIsBetter !== false)
-                  : ''
+                let style = undefined
+                if (col.colorScale && colRanges[col.key]) {
+                  const pct = percentileRank(val, colRanges[col.key])
+                  if (pct != null) style = savantColor(pct, col.higherIsBetter !== false)
+                }
 
                 if (col.key === 'pitcher_name' || col.key === 'batter_name') {
                   const id = row.pitcher_id || row.batter_id
                   const basePath = col.key === 'pitcher_name' ? '/sports/mlb/pitcher' : '/sports/mlb/batter'
                   return (
-                    <td key={col.key} className={colorClass}>
+                    <td key={col.key} style={style}>
                       {linkTo && id ? (
                         <Link
                           to={`${basePath}/${id}`}
-                          className="text-electric hover:underline font-medium"
+                          className="font-medium hover:underline"
+                          style={{ color: '#0066CC' }}
                         >
                           {val ?? '–'}
                         </Link>
@@ -92,7 +105,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
                 }
 
                 return (
-                  <td key={col.key} className={colorClass}>
+                  <td key={col.key} style={style} className="tabular-nums">
                     {val != null ? (col.format ? col.format(val) : val) : '–'}
                   </td>
                 )
@@ -103,7 +116,7 @@ export default function LeaderboardTable({ rows = [], columns = [], defaultSort,
       </table>
 
       {sorted.length === 0 && (
-        <div className="text-center py-12 text-mist text-sm">
+        <div className="text-center py-12 text-sm" style={{ color: '#86868B' }}>
           No data — check filters or wait for the data pipeline to run.
         </div>
       )}

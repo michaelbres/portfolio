@@ -26,29 +26,42 @@ export default function PitchLocationChart({ pitches = [], height = 300, title =
   const activePitchTypes = [...new Set(pitches.map((p) => p.pitch_type).filter(Boolean))]
 
   return (
-    <div className="bg-sv-dark rounded p-3">
-      <div className="text-white text-xs font-bangers tracking-wider mb-2">{title}</div>
+    <div
+      className="rounded-xl p-3"
+      style={{
+        background: '#FFFFFF',
+        border: '1px solid rgba(0,0,0,0.08)',
+      }}
+    >
+      {title && (
+        <div
+          className="text-xs tracking-wider uppercase font-semibold mb-2"
+          style={{ color: '#1D1D1F' }}
+        >
+          {title}
+        </div>
+      )}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         width="100%"
         style={{ maxHeight: height, userSelect: 'none' }}
       >
-        {/* Plate / batter boxes (faint) */}
+        {/* Background */}
         <rect x={PAD} y={PAD} width={W - PAD * 2} height={H - PAD * 2}
-              fill="none" stroke="#333" strokeWidth="1" strokeDasharray="4,4" />
+              fill="#F5F5F7" stroke="rgba(0,0,0,0.08)" strokeWidth="1" strokeDasharray="4,4" />
 
         {/* Strike zone */}
         <rect
           x={SZ_X_L} y={szTop}
           width={SZ_X_R - SZ_X_L} height={szBot - szTop}
-          fill="none" stroke="#aaa" strokeWidth="2"
+          fill="none" stroke="#1D1D1F" strokeWidth="2"
         />
         {/* Zone thirds — vertical */}
         {[-0.277, 0.277].map((x) => (
           <line key={x}
             x1={scaleX(x)} y1={szTop}
             x2={scaleX(x)} y2={szBot}
-            stroke="#555" strokeWidth="1"
+            stroke="rgba(0,0,0,0.25)" strokeWidth="1"
           />
         ))}
         {/* Zone thirds — horizontal */}
@@ -56,7 +69,7 @@ export default function PitchLocationChart({ pitches = [], height = 300, title =
           <line key={z}
             x1={SZ_X_L} y1={scaleZ(z)}
             x2={SZ_X_R} y2={scaleZ(z)}
-            stroke="#555" strokeWidth="1"
+            stroke="rgba(0,0,0,0.25)" strokeWidth="1"
           />
         ))}
 
@@ -69,12 +82,12 @@ export default function PitchLocationChart({ pitches = [], height = 300, title =
             ${scaleX(0)},${scaleZ(-0.1)}
             ${scaleX(-0.708)},${scaleZ(0.05)}
           `}
-          fill="#444" stroke="#888" strokeWidth="1"
+          fill="#E8E8ED" stroke="#86868B" strokeWidth="1"
         />
 
         {/* Center crosshair */}
         <line x1={scaleX(0)} y1={szTop - 8} x2={scaleX(0)} y2={szBot + 8}
-              stroke="#333" strokeWidth="1" strokeDasharray="3,3" />
+              stroke="rgba(0,0,0,0.12)" strokeWidth="1" strokeDasharray="3,3" />
 
         {/* Pitches */}
         {pitches.map((p, i) => {
@@ -86,8 +99,8 @@ export default function PitchLocationChart({ pitches = [], height = 300, title =
               cy={scaleZ(p.plate_z)}
               r={5}
               fill={pitchColor(p.pitch_type)}
-              fillOpacity={0.75}
-              stroke="#000"
+              fillOpacity={0.78}
+              stroke="rgba(0,0,0,0.15)"
               strokeWidth={0.5}
             />
           )
@@ -99,9 +112,13 @@ export default function PitchLocationChart({ pitches = [], height = 300, title =
         <div className="flex flex-wrap gap-2 mt-2">
           {activePitchTypes.map((pt) => (
             <div key={pt} className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full border border-black/20"
-                   style={{ backgroundColor: pitchColor(pt) }} />
-              <span className="text-xs text-gray-300">{PITCH_LABEL[pt] || pt}</span>
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: pitchColor(pt), border: '1px solid rgba(0,0,0,0.15)' }}
+              />
+              <span className="text-xs" style={{ color: '#86868B' }}>
+                {PITCH_LABEL[pt] || pt}
+              </span>
             </div>
           ))}
         </div>

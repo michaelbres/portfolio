@@ -9,13 +9,14 @@ const SPORTS = [
     title: 'Baseball Analytics',
     description:
       'Statcast pitch-by-pitch data. Leaderboards, movement profiles, pitch location charts, and your own Stuff+ model.',
-    accent: '#0EA5E9',
-    accentBg: 'rgba(14,165,233,0.10)',
-    accentBorder: 'rgba(14,165,233,0.20)',
+    accent: '#0066CC',
+    accentBg: 'rgba(0,102,204,0.08)',
+    accentBorder: 'rgba(0,102,204,0.20)',
     available: true,
     subLinks: [
       { to: '/sports/mlb', label: 'Pitch Dashboard' },
       { to: '/sports/mlb/fair-value', label: 'Fair Value Model' },
+      { to: '/sports/mlb/stuff-plus', label: 'Stuff+ Leaderboard' },
     ],
   },
   {

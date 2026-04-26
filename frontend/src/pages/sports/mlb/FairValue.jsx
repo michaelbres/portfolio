@@ -1,13 +1,13 @@
 // /home/user/portfolio/frontend/src/pages/sports/mlb/FairValue.jsx
 import { useState, useEffect, useCallback } from 'react'
 import Navbar from '../../../components/Navbar'
+import PageHeader from '../../../components/PageHeader'
 import GameFairValueCard from '../../../components/mlb/GameFairValueCard'
 import api from '../../../lib/api'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 function toLocalDateStr(d) {
-  // Returns YYYY-MM-DD in local time
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -32,7 +32,7 @@ function fmtDisplayDate(dateStr) {
 export default function FairValue() {
   const [selectedDate, setSelectedDate] = useState(toLocalDateStr(new Date()))
   const [games, setGames] = useState([])
-  const [liveOdds, setLiveOdds] = useState({})   // { game_pk: {home_odds, away_odds, ...} }
+  const [liveOdds, setLiveOdds] = useState({})
   const [liveOddsAt, setLiveOddsAt] = useState(null)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
@@ -72,7 +72,6 @@ export default function FairValue() {
   useEffect(() => {
     fetchGames(selectedDate)
     fetchLiveOdds(selectedDate)
-    // Refresh Kalshi odds every 5 minutes
     const interval = setInterval(() => fetchLiveOdds(selectedDate), 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [selectedDate, fetchGames, fetchLiveOdds])
@@ -88,62 +87,29 @@ export default function FairValue() {
       if (data.games_computed > 0) {
         setLastRun(`Computed ${data.games_computed} game(s)`)
       } else if (data.error && data.error.startsWith('All ')) {
-        // All games failed — surface as a real error
         setError(data.error)
       } else if (data.error && data.error.includes('failed')) {
-        // Some games failed — show as warning in lastRun
         setLastRun(data.error)
       } else {
-        // "Already computed" or no games scheduled — informational
         setLastRun(data.error || 'No games found for this date.')
       }
     } catch (e) {
       setError(e?.response?.data?.detail || 'Pipeline run failed. Check server logs.')
     } finally {
       setRunning(false)
-      // Always refresh game list — handles "already computed" case
       fetchGames(selectedDate)
     }
   }
 
   return (
-    <div className="min-h-screen bg-void">
+    <div className="min-h-screen" style={{ background: '#F5F5F7' }}>
       <Navbar />
 
-      {/* Page header */}
-      <div
-        className="border-b"
-        style={{
-          background: '#141414',
-          borderColor: 'rgba(255,255,255,0.08)',
-        }}
-      >
-        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col gap-1.5">
-          <div className="flex items-center gap-3">
-            <span
-              className="text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
-              style={{
-                background: 'rgba(14,165,233,0.12)',
-                color: '#0EA5E9',
-                border: '1px solid rgba(14,165,233,0.20)',
-              }}
-            >
-              MLB
-            </span>
-            <h1
-              className="text-snow font-semibold tracking-tight text-2xl"
-              style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, system-ui, sans-serif' }}
-            >
-              Fair Value Model
-            </h1>
-          </div>
-          <p className="text-sm text-mist max-w-2xl leading-relaxed">
-            NegBin-based win probabilities derived from Statcast xFIP, pitch count–adjusted
-            starter innings, bullpen fatigue, park factors, and home-field advantage.
-            50/50 blend of season-long and last-{5}-start metrics.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        kicker="MLB"
+        title="Fair Value Model"
+        subtitle="NegBin-based win probabilities derived from Statcast xFIP, pitch count–adjusted starter innings, bullpen fatigue, park factors, and home-field advantage. 50/50 blend of season-long and last-5-start metrics."
+      />
 
       {/* Controls */}
       <div className="max-w-7xl mx-auto px-6 py-4">
@@ -151,15 +117,15 @@ export default function FairValue() {
           {/* Date nav */}
           <div
             className="flex items-center rounded-xl overflow-hidden"
-            style={{
-              background: '#1C1C1E',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
+            style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.12)' }}
           >
             <button
               onClick={() => setSelectedDate(addDays(selectedDate, -1))}
-              className="px-3 py-2 text-mist hover:text-snow transition-colors duration-150 text-sm"
-              style={{ borderRight: '1px solid rgba(255,255,255,0.08)' }}
+              className="px-3 py-2 transition-colors duration-150 text-sm hover:bg-black/5"
+              style={{
+                color: '#86868B',
+                borderRight: '1px solid rgba(0,0,0,0.08)',
+              }}
             >
               ◀
             </button>
@@ -167,30 +133,33 @@ export default function FairValue() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-2 font-mono text-sm focus:outline-none text-snow"
-              style={{ background: 'transparent' }}
+              className="px-3 py-2 font-mono text-sm focus:outline-none"
+              style={{ background: 'transparent', color: '#1D1D1F' }}
             />
             <button
               onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-              className="px-3 py-2 text-mist hover:text-snow transition-colors duration-150 text-sm"
-              style={{ borderLeft: '1px solid rgba(255,255,255,0.08)' }}
+              className="px-3 py-2 transition-colors duration-150 text-sm hover:bg-black/5"
+              style={{
+                color: '#86868B',
+                borderLeft: '1px solid rgba(0,0,0,0.08)',
+              }}
             >
               ▶
             </button>
           </div>
 
-          <span className="text-mist text-sm hidden md:block">
+          <span className="text-sm hidden md:block" style={{ color: '#86868B' }}>
             {fmtDisplayDate(selectedDate)}
           </span>
 
           <div className="ml-auto flex items-center gap-2">
             {lastRun && (
               <span
-                className="text-xs px-2.5 py-1 rounded-lg"
+                className="text-xs px-2.5 py-1 rounded-full"
                 style={{
-                  background: 'rgba(16,185,129,0.10)',
-                  color: '#10B981',
-                  border: '1px solid rgba(16,185,129,0.20)',
+                  background: 'rgba(40,205,65,0.10)',
+                  color: '#027A48',
+                  border: '1px solid rgba(40,205,65,0.25)',
                 }}
               >
                 {lastRun}
@@ -199,11 +168,11 @@ export default function FairValue() {
             <button
               onClick={() => runPipeline(false)}
               disabled={running}
-              className="px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all duration-150 disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-150 disabled:opacity-50"
               style={{
-                background: '#1C1C1E',
-                border: '1px solid rgba(255,255,255,0.10)',
-                color: '#F5F5F7',
+                background: '#FFFFFF',
+                border: '1px solid rgba(0,0,0,0.12)',
+                color: '#1D1D1F',
               }}
               title="Fetch schedule and compute fair values"
             >
@@ -212,11 +181,11 @@ export default function FairValue() {
             <button
               onClick={() => runPipeline(true)}
               disabled={running}
-              className="px-3.5 py-1.5 rounded-xl text-sm font-medium transition-all duration-150 disabled:opacity-50"
+              className="px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-150 disabled:opacity-50"
               style={{
-                background: 'rgba(14,165,233,0.12)',
-                border: '1px solid rgba(14,165,233,0.25)',
-                color: '#0EA5E9',
+                background: 'rgba(0,102,204,0.08)',
+                border: '1px solid rgba(0,102,204,0.25)',
+                color: '#0066CC',
               }}
               title="Force recompute even if results already exist"
             >
@@ -226,23 +195,23 @@ export default function FairValue() {
         </div>
 
         {/* Model legend */}
-        <div className="mt-3 flex flex-wrap gap-3 text-xs text-mist">
+        <div className="mt-3 flex flex-wrap gap-3 text-xs" style={{ color: '#86868B' }}>
           <span>
-            <span className="text-snow font-medium">Fair value odds</span> = no-vig American moneyline
+            <span className="font-medium" style={{ color: '#1D1D1F' }}>Fair value odds</span> = no-vig American moneyline
           </span>
-          <span className="text-smoke">·</span>
+          <span style={{ color: '#D2D2D7' }}>·</span>
           <span>
-            <span className="text-snow font-medium">λ</span> = expected runs (NegBin mean)
+            <span className="font-medium" style={{ color: '#1D1D1F' }}>λ</span> = expected runs (NegBin mean)
           </span>
-          <span className="text-smoke">·</span>
+          <span style={{ color: '#D2D2D7' }}>·</span>
           <span
             className="font-medium px-1.5 py-0.5 rounded"
-            style={{ background: 'rgba(14,165,233,0.10)', color: '#0EA5E9' }}
+            style={{ background: 'rgba(0,102,204,0.10)', color: '#0066CC' }}
           >
             Blue pitch limit
           </span>{' '}
           <span>= manual override active</span>
-          <span className="text-smoke">·</span>
+          <span style={{ color: '#D2D2D7' }}>·</span>
           <span>Edit pitch limit and press Enter to recompute instantly</span>
         </div>
       </div>
@@ -254,8 +223,8 @@ export default function FairValue() {
             className="mb-4 px-4 py-3 text-sm rounded-xl"
             style={{
               background: 'rgba(239,68,68,0.08)',
-              border: '1px solid rgba(239,68,68,0.20)',
-              color: '#FCA5A5',
+              border: '1px solid rgba(239,68,68,0.25)',
+              color: '#B42318',
             }}
           >
             {error}
@@ -264,31 +233,28 @@ export default function FairValue() {
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <div
-              className="text-mist text-lg font-light animate-pulse tracking-wide"
-              style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif' }}
-            >
+            <div className="text-lg font-light animate-pulse tracking-wide" style={{ color: '#86868B' }}>
               Loading games…
             </div>
           </div>
         ) : games.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="text-mist text-lg font-light">
+            <div className="text-lg font-light" style={{ color: '#86868B' }}>
               No games found for {fmtDisplayDate(selectedDate)}
             </div>
-            <p className="text-sm text-mist" style={{ opacity: 0.6 }}>
-              Click <strong className="text-snow font-medium">Run Pipeline</strong> to fetch today's schedule and compute fair values.
+            <p className="text-sm" style={{ color: '#86868B', opacity: 0.75 }}>
+              Click <strong className="font-medium" style={{ color: '#1D1D1F' }}>Run Pipeline</strong> to fetch today's schedule and compute fair values.
             </p>
           </div>
         ) : (
           <>
-            <div className="mb-3 flex items-center justify-between text-sm text-mist">
+            <div className="mb-3 flex items-center justify-between text-sm" style={{ color: '#86868B' }}>
               <span>
                 {games.length} game{games.length !== 1 ? 's' : ''} —{' '}
                 {games.filter((g) => g.home_lineup_source === 'confirmed').length} confirmed lineups,{' '}
                 {Object.keys(liveOdds).length > 0
                   ? (
-                    <span style={{ color: '#10B981' }}>
+                    <span style={{ color: '#027A48' }}>
                       {Object.keys(liveOdds).length} live Kalshi lines
                     </span>
                   )
@@ -296,7 +262,7 @@ export default function FairValue() {
                 }
               </span>
               {liveOddsAt && (
-                <span className="text-xs text-mist" style={{ opacity: 0.6 }}>
+                <span className="text-xs" style={{ color: '#86868B', opacity: 0.75 }}>
                   Kalshi updated {liveOddsAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                 </span>
               )}

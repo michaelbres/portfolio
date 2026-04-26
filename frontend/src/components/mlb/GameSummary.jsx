@@ -30,7 +30,6 @@ export default function GameSummary({ season }) {
   const [norms, setNorms]               = useState({})
   const dateStripRef = useRef(null)
 
-  // Load league norms once per season (used for heat map coloring in cards)
   useEffect(() => {
     mlb.pitchTypeNorms({ season }).then((r) => setNorms(r.data)).catch(() => {})
   }, [season])
@@ -74,7 +73,6 @@ export default function GameSummary({ season }) {
 
   return (
     <>
-      {/* Card modal */}
       {cardSummary && (
         <PitcherCard summary={cardSummary} norms={norms} onClose={() => setCardSummary(null)} />
       )}
@@ -83,16 +81,13 @@ export default function GameSummary({ season }) {
         {/* Date strip */}
         <div
           className="rounded-xl p-4"
-          style={{
-            background: '#1C1C1E',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}
+          style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.08)' }}
         >
-          <p className="text-xs text-mist uppercase tracking-wider mb-3">Select Date</p>
+          <p className="text-xs uppercase tracking-wider mb-3" style={{ color: '#86868B' }}>Select Date</p>
           {loadingDates ? (
-            <p className="text-sm text-mist animate-pulse">Loading dates…</p>
+            <p className="text-sm animate-pulse" style={{ color: '#86868B' }}>Loading dates…</p>
           ) : dates.length === 0 ? (
-            <p className="text-sm text-mist">No game data available for this season yet.</p>
+            <p className="text-sm" style={{ color: '#86868B' }}>No game data available for this season yet.</p>
           ) : (
             <div
               ref={dateStripRef}
@@ -103,18 +98,18 @@ export default function GameSummary({ season }) {
                 <button
                   key={d}
                   onClick={() => selectDate(d)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 whitespace-nowrap"
+                  className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 whitespace-nowrap"
                   style={
                     d === selectedDate
                       ? {
-                          background: 'rgba(14,165,233,0.15)',
-                          color: '#0EA5E9',
-                          border: '1px solid rgba(14,165,233,0.30)',
+                          background: 'rgba(0,102,204,0.10)',
+                          color: '#0066CC',
+                          border: '1px solid rgba(0,102,204,0.25)',
                         }
                       : {
-                          background: 'rgba(255,255,255,0.05)',
+                          background: '#F5F5F7',
                           color: '#86868B',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          border: '1px solid rgba(0,0,0,0.08)',
                         }
                   }
                 >
@@ -129,23 +124,20 @@ export default function GameSummary({ season }) {
         {selectedDate && (
           <div
             className="rounded-xl p-4"
-            style={{
-              background: '#1C1C1E',
-              border: '1px solid rgba(255,255,255,0.08)',
-            }}
+            style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.08)' }}
           >
-            <p className="text-xs text-mist uppercase tracking-wider mb-3">
+            <p className="text-xs uppercase tracking-wider mb-3" style={{ color: '#86868B' }}>
               {formatDateLabel(selectedDate)} — click a pitcher to see their game
             </p>
             {loadingPitchers ? (
-              <p className="text-sm text-mist animate-pulse">Loading pitchers…</p>
+              <p className="text-sm animate-pulse" style={{ color: '#86868B' }}>Loading pitchers…</p>
             ) : games.length === 0 ? (
-              <p className="text-sm text-mist">No pitching data for this date.</p>
+              <p className="text-sm" style={{ color: '#86868B' }}>No pitching data for this date.</p>
             ) : (
               <div className="space-y-4">
                 {games.map((game) => (
                   <div key={`${game.away}@${game.home}`}>
-                    <div className="text-xs font-medium text-electric mb-2 tracking-wide">
+                    <div className="text-xs font-semibold mb-2 tracking-wide" style={{ color: '#0066CC' }}>
                       {game.away} @ {game.home}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -154,23 +146,23 @@ export default function GameSummary({ season }) {
                           key={`${p.pitcher_id}:${p.game_pk}`}
                           onClick={() => openCard(p)}
                           disabled={loadingCard}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50"
+                          className="px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 disabled:opacity-50"
                           style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid rgba(255,255,255,0.10)',
-                            color: '#F5F5F7',
+                            background: '#F5F5F7',
+                            border: '1px solid rgba(0,0,0,0.08)',
+                            color: '#1D1D1F',
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(14,165,233,0.40)'
-                            e.currentTarget.style.color = '#0EA5E9'
+                            e.currentTarget.style.borderColor = 'rgba(0,102,204,0.40)'
+                            e.currentTarget.style.color = '#0066CC'
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)'
-                            e.currentTarget.style.color = '#F5F5F7'
+                            e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'
+                            e.currentTarget.style.color = '#1D1D1F'
                           }}
                         >
                           {p.pitcher_name}
-                          <span className="ml-1.5 text-mist">{p.total_pitches}p</span>
+                          <span className="ml-1.5" style={{ color: '#86868B' }}>{p.total_pitches}p</span>
                         </button>
                       ))}
                     </div>
@@ -179,7 +171,7 @@ export default function GameSummary({ season }) {
               </div>
             )}
             {loadingCard && (
-              <p className="text-xs text-mist animate-pulse mt-3">Loading card…</p>
+              <p className="text-xs animate-pulse mt-3" style={{ color: '#86868B' }}>Loading card…</p>
             )}
           </div>
         )}

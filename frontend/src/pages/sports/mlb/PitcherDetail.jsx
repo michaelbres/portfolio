@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, LineChart, Line, Legend,
+  ResponsiveContainer, Cell, LineChart, Line,
 } from 'recharts'
 import Navbar from '../../../components/Navbar'
+import PageHeader from '../../../components/PageHeader'
 import PitchLocationChart from '../../../components/mlb/PitchLocationChart'
 import PitchMovementChart from '../../../components/mlb/PitchMovementChart'
 import LeaderboardTable from '../../../components/mlb/LeaderboardTable'
 import { mlb } from '../../../lib/api'
 import { pitchColor, PITCH_LABEL } from '../../../lib/pitchColors'
+import { savantColor } from '../../../lib/savantColor'
 
-const TABS = ['Arsenal', 'Location', 'Movement', 'Pitch Log']
+const TABS = ['Overview', 'Arsenal', 'Location', 'Movement', 'Pitch Log']
 
 const PITCH_LOG_COLS = [
   { key: 'game_date',     label: 'Date' },
@@ -32,13 +34,20 @@ const PITCH_LOG_COLS = [
 ]
 
 const cardStyle = {
-  background: '#1C1C1E',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '0.75rem',
+  background: '#FFFFFF',
+  border: '1px solid rgba(0,0,0,0.08)',
+  borderRadius: '14px',
+}
+
+// ── Savant-style headshot URL builder ────────────────────────────────────────
+// Uses MLB's official headshot CDN. Falls back to a gray silhouette on error.
+function headshotUrl(pitcherId) {
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${pitcherId}/headshot/67/current`
 }
 
 export default function PitcherDetail() {
   const { id } = useParams()
+  const pitcherId = Number(id)
   const [tab, setTab] = useState(0)
   const [summary, setSummary] = useState(null)
   const [pitches, setPitches] = useState([])
@@ -48,16 +57,21 @@ export default function PitcherDetail() {
   const [logOffset, setLogOffset] = useState(0)
   const [logTotal, setLogTotal] = useState(0)
 
+  // Percentile data from league-wide pitching leaderboard
+  const [leaderboard, setLeaderboard] = useState([])
+
   useEffect(() => {
     setLoading(true)
     Promise.all([
       mlb.pitcherSummary(id, { season }),
       mlb.pitcherPitches(id, { season, limit: 2000 }),
+      mlb.leaderboardPitching({ season, min_pitches: 100 }).catch(() => ({ data: [] })),
     ])
-      .then(([sumRes, pitchRes]) => {
+      .then(([sumRes, pitchRes, lbRes]) => {
         setSummary(sumRes.data)
         setPitches(pitchRes.data.data)
         setLogTotal(pitchRes.data.total)
+        setLeaderboard(lbRes.data || [])
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -67,11 +81,38 @@ export default function PitcherDetail() {
     ? pitches.filter((p) => p.pitch_type === selectedPitchType)
     : pitches
 
+  // Compute percentile ranks for this pitcher across key metrics
+  const percentiles = useMemo(() => {
+    if (!leaderboard.length) return null
+    const self = leaderboard.find((r) => r.pitcher_id === pitcherId)
+    if (!self) return null
+
+    const pct = (key, higherIsBetter = true) => {
+      const vals = leaderboard.map((r) => r[key]).filter((v) => v != null).sort((a, b) => a - b)
+      if (!vals.length || self[key] == null) return null
+      const val = self[key]
+      let below = 0
+      for (const v of vals) { if (v < val) below++ }
+      const p = below / vals.length
+      return higherIsBetter ? p : 1 - p
+    }
+
+    return [
+      { label: 'Fastball Velo', key: 'avg_velo',          raw: self.avg_velo,          pct: pct('avg_velo'),           fmt: (v) => v?.toFixed(1) + ' mph' },
+      { label: 'Max Velo',      key: 'max_velo',          raw: self.max_velo,          pct: pct('max_velo'),           fmt: (v) => v?.toFixed(1) + ' mph' },
+      { label: 'Spin Rate',     key: 'avg_spin',          raw: self.avg_spin,          pct: pct('avg_spin'),           fmt: (v) => v ? Math.round(v) + ' rpm' : '–' },
+      { label: 'Extension',     key: 'avg_extension',     raw: self.avg_extension,     pct: pct('avg_extension'),      fmt: (v) => v?.toFixed(1) + ' ft' },
+      { label: 'IVB',           key: 'avg_pfx_z',         raw: self.avg_pfx_z,         pct: pct('avg_pfx_z'),          fmt: (v) => v != null ? (v * 12).toFixed(1) + '"' : '–' },
+      { label: 'Whiff %',       key: 'whiff_rate',        raw: self.whiff_rate,        pct: pct('whiff_rate'),         fmt: (v) => v != null ? v.toFixed(1) + '%' : '–' },
+      { label: 'xwOBA Against', key: 'avg_xwoba_against', raw: self.avg_xwoba_against, pct: pct('avg_xwoba_against', false), fmt: (v) => v?.toFixed(3) },
+    ].filter((p) => p.pct != null)
+  }, [leaderboard, pitcherId])
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-void">
+      <div className="min-h-screen" style={{ background: '#F5F5F7' }}>
         <Navbar />
-        <div className="flex items-center justify-center h-64 text-mist animate-pulse">
+        <div className="flex items-center justify-center h-64 animate-pulse" style={{ color: '#86868B' }}>
           Loading pitcher data…
         </div>
       </div>
@@ -80,11 +121,11 @@ export default function PitcherDetail() {
 
   if (!summary) {
     return (
-      <div className="min-h-screen bg-void">
+      <div className="min-h-screen" style={{ background: '#F5F5F7' }}>
         <Navbar />
         <div className="flex flex-col items-center justify-center h-64 gap-4">
-          <div className="text-mist">Pitcher not found.</div>
-          <Link to="/sports/mlb" className="text-electric hover:underline text-sm">
+          <div style={{ color: '#86868B' }}>Pitcher not found.</div>
+          <Link to="/sports/mlb" className="text-sm hover:underline" style={{ color: '#0066CC' }}>
             ← Back to MLB
           </Link>
         </div>
@@ -92,57 +133,86 @@ export default function PitcherDetail() {
     )
   }
 
+  const handIcon = summary.p_throws === 'R' ? 'RHP' : summary.p_throws === 'L' ? 'LHP' : '–'
+
   return (
-    <div className="min-h-screen bg-void">
+    <div className="min-h-screen" style={{ background: '#F5F5F7' }}>
       <Navbar />
 
-      {/* Header */}
-      <div
-        className="border-b"
-        style={{ background: '#141414', borderColor: 'rgba(255,255,255,0.08)' }}
-      >
+      {/* Savant-style profile header: headshot + name + meta + percentile bars */}
+      <div style={{ background: '#FFFFFF', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
         <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-2 text-xs text-mist mb-3">
-            <Link to="/sports/mlb" className="hover:text-snow transition-colors">MLB</Link>
+          <div className="flex items-center gap-2 text-xs mb-4" style={{ color: '#86868B' }}>
+            <Link to="/sports/mlb" className="hover:opacity-70 transition-opacity" style={{ color: '#86868B' }}>MLB</Link>
             <span>›</span>
-            <span className="text-snow">{summary.pitcher_name}</span>
+            <Link to="/sports/mlb" className="hover:opacity-70 transition-opacity" style={{ color: '#86868B' }}>Pitching Leaderboard</Link>
+            <span>›</span>
+            <span style={{ color: '#1D1D1F' }}>{summary.pitcher_name}</span>
           </div>
-          <div className="flex flex-wrap items-end gap-6">
-            <div>
-              <h1 className="text-snow text-3xl font-semibold tracking-tight leading-none">
+
+          <div className="flex flex-wrap items-start gap-6">
+            <div
+              className="flex-shrink-0 rounded-full overflow-hidden"
+              style={{
+                width: 108, height: 108,
+                background: '#E8E8ED',
+                border: '2px solid rgba(0,0,0,0.08)',
+              }}
+            >
+              <img
+                src={headshotUrl(pitcherId)}
+                alt={summary.pitcher_name}
+                width={108}
+                height={108}
+                onError={(e) => { e.target.style.display = 'none' }}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <h1
+                className="tracking-tight"
+                style={{
+                  fontWeight: 600,
+                  fontSize: 'clamp(1.75rem, 3vw, 2.25rem)',
+                  color: '#1D1D1F',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.1,
+                }}
+              >
                 {summary.pitcher_name}
               </h1>
-              <div className="flex items-center gap-3 mt-2">
+              <div className="flex flex-wrap items-center gap-3 mt-2">
                 <span
-                  className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                  style={{
-                    background: 'rgba(14,165,233,0.12)',
-                    color: '#0EA5E9',
-                    border: '1px solid rgba(14,165,233,0.20)',
-                  }}
+                  className="text-[11px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full"
+                  style={{ background: 'rgba(0,102,204,0.10)', color: '#0066CC' }}
                 >
-                  {summary.p_throws === 'R' ? 'RHP' : summary.p_throws === 'L' ? 'LHP' : '–'}
+                  {handIcon}
                 </span>
-                <span className="text-mist text-sm">
-                  {summary.total_pitches?.toLocaleString()} pitches in {season}
+                <span className="text-sm" style={{ color: '#86868B' }}>
+                  {summary.total_pitches?.toLocaleString()} pitches · {season} season
                 </span>
               </div>
             </div>
-            <div className="ml-auto">
+
+            <div className="flex-shrink-0">
               <select
                 value={season}
                 onChange={(e) => setSeason(Number(e.target.value))}
                 style={{
-                  background: '#2C2C2E',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  color: '#F5F5F7',
-                  borderRadius: '0.5rem',
-                  padding: '0.375rem 0.75rem',
+                  background: '#FFFFFF',
+                  border: '1px solid rgba(0,0,0,0.12)',
+                  color: '#1D1D1F',
+                  borderRadius: 980,
+                  padding: '0.4rem 0.9rem',
                   fontSize: '0.875rem',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  outline: 'none',
                 }}
               >
-                <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
+                <option value={2025}>2025</option>
               </select>
             </div>
           </div>
@@ -152,25 +222,18 @@ export default function PitcherDetail() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Tabs */}
         <div
-          className="flex gap-1 mb-6 p-1 rounded-xl"
-          style={{ background: '#1C1C1E', width: 'fit-content' }}
+          className="flex gap-1 mb-6 p-1 rounded-full overflow-x-auto"
+          style={{ background: '#E8E8ED', width: 'fit-content' }}
         >
           {TABS.map((t, i) => (
             <button
               key={t}
               onClick={() => setTab(i)}
-              className="px-4 py-2 text-sm rounded-lg transition-all duration-150 font-medium"
+              className="px-4 py-1.5 text-sm rounded-full transition-all duration-150 font-medium whitespace-nowrap"
               style={
                 tab === i
-                  ? {
-                      background: 'rgba(14,165,233,0.15)',
-                      color: '#0EA5E9',
-                      border: '1px solid rgba(14,165,233,0.25)',
-                    }
-                  : {
-                      color: '#86868B',
-                      border: '1px solid transparent',
-                    }
+                  ? { background: '#FFFFFF', color: '#1D1D1F', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }
+                  : { background: 'transparent', color: '#86868B' }
               }
             >
               {t}
@@ -178,14 +241,14 @@ export default function PitcherDetail() {
           ))}
         </div>
 
-        {/* Pitch type filter pills */}
-        {(tab === 1 || tab === 2) && (
+        {/* Pitch type filter pills (Location + Movement only) */}
+        {(tab === 2 || tab === 3) && (
           <div className="flex flex-wrap gap-2 mb-4">
             <PitchPill
               active={selectedPitchType === ''}
               onClick={() => setSelectedPitchType('')}
               label="All"
-              color="#555"
+              color="#86868B"
             />
             {summary.arsenal.map((a) => (
               <PitchPill
@@ -199,27 +262,94 @@ export default function PitcherDetail() {
           </div>
         )}
 
-        {/* ── ARSENAL TAB ── */}
+        {/* ── OVERVIEW TAB — Savant-style percentile rankings + arsenal summary ── */}
         {tab === 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Percentile rankings panel (Savant-signature feature) */}
+            <div style={cardStyle} className="p-5 lg:col-span-2">
+              <div className="flex items-baseline justify-between mb-4">
+                <h3 className="font-semibold tracking-tight" style={{ color: '#1D1D1F', fontSize: '1rem' }}>
+                  Percentile Rankings
+                </h3>
+                <span className="text-xs" style={{ color: '#86868B' }}>
+                  Among qualified MLB pitchers ({leaderboard.length})
+                </span>
+              </div>
+
+              {percentiles && percentiles.length > 0 ? (
+                <div className="space-y-2.5">
+                  {percentiles.map((p) => (
+                    <PercentileBar key={p.label} {...p} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm py-6 text-center" style={{ color: '#86868B' }}>
+                  Not enough data to compute percentile rankings.
+                </div>
+              )}
+            </div>
+
+            {/* Quick arsenal stat block */}
+            <div style={cardStyle} className="p-5">
+              <h3 className="font-semibold tracking-tight mb-3" style={{ color: '#1D1D1F', fontSize: '1rem' }}>
+                Arsenal
+              </h3>
+              <div className="space-y-2">
+                {[...summary.arsenal].sort((a, b) => b.count - a.count).map((a) => (
+                  <div key={a.pitch_type} className="flex items-center gap-2.5">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: pitchColor(a.pitch_type), border: '1px solid rgba(0,0,0,0.12)' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium truncate" style={{ color: '#1D1D1F' }}>
+                          {a.pitch_name || a.pitch_type}
+                        </span>
+                        <span className="text-xs tabular-nums" style={{ color: '#86868B' }}>
+                          {a.usage_pct}%
+                        </span>
+                      </div>
+                      <div className="text-xs tabular-nums" style={{ color: '#86868B' }}>
+                        {a.avg_velo?.toFixed(1) ?? '–'} mph
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ARSENAL TAB ── */}
+        {tab === 1 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Usage bar chart */}
             <div style={cardStyle} className="p-4">
-              <h3 className="text-snow font-semibold tracking-tight mb-4">Pitch Usage</h3>
+              <h3 className="font-semibold tracking-tight mb-4" style={{ color: '#1D1D1F' }}>
+                Pitch Usage
+              </h3>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart
                   data={[...summary.arsenal].sort((a, b) => b.count - a.count)}
                   margin={{ left: 10, right: 10, bottom: 30 }}
                   layout="vertical"
                 >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(255,255,255,0.06)" />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.06)" />
                   <XAxis type="number" tickFormatter={(v) => v + '%'} domain={[0, 'auto']}
-                         tick={{ fontSize: 11, fill: '#86868B' }} />
+                         tick={{ fontSize: 11, fill: '#86868B' }} axisLine={{ stroke: 'rgba(0,0,0,0.15)' }} />
                   <YAxis
                     type="category" dataKey="pitch_name" width={120}
-                    tick={{ fontSize: 11, fill: '#86868B' }} tickLine={false}
+                    tick={{ fontSize: 11, fill: '#1D1D1F' }} tickLine={false} axisLine={{ stroke: 'rgba(0,0,0,0.15)' }}
                   />
                   <Tooltip
-                    contentStyle={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.12)', color: '#F5F5F7', fontSize: 12 }}
+                    contentStyle={{
+                      background: '#FFFFFF',
+                      border: '1px solid rgba(0,0,0,0.10)',
+                      color: '#1D1D1F',
+                      fontSize: 12,
+                      borderRadius: 8,
+                    }}
                     formatter={(v) => v.toFixed(1) + '%'}
                   />
                   <Bar dataKey="usage_pct" isAnimationActive={false}>
@@ -233,8 +363,10 @@ export default function PitcherDetail() {
 
             {/* Arsenal stats table */}
             <div style={cardStyle} className="overflow-hidden">
-              <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <h3 className="text-snow font-semibold tracking-tight">Arsenal Breakdown</h3>
+              <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+                <h3 className="font-semibold tracking-tight" style={{ color: '#1D1D1F' }}>
+                  Arsenal Breakdown
+                </h3>
               </div>
               <table className="savant-table">
                 <thead>
@@ -253,17 +385,19 @@ export default function PitcherDetail() {
                     <tr key={a.pitch_type}>
                       <td>
                         <div className="flex items-center gap-2">
-                          <div className="w-3 h-3 rounded-full flex-shrink-0"
-                               style={{ backgroundColor: pitchColor(a.pitch_type), border: '1px solid rgba(255,255,255,0.15)' }} />
+                          <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: pitchColor(a.pitch_type), border: '1px solid rgba(0,0,0,0.15)' }}
+                          />
                           <span className="text-xs">{a.pitch_name || a.pitch_type}</span>
                         </div>
                       </td>
-                      <td>{a.usage_pct}%</td>
-                      <td>{a.avg_velo?.toFixed(1) ?? '–'}</td>
-                      <td>{a.avg_spin ? Math.round(a.avg_spin) : '–'}</td>
-                      <td>{a.avg_pfx_x != null ? (a.avg_pfx_x * 12).toFixed(1) : '–'}</td>
-                      <td>{a.avg_pfx_z != null ? (a.avg_pfx_z * 12).toFixed(1) : '–'}</td>
-                      <td>{a.avg_extension?.toFixed(1) ?? '–'}</td>
+                      <td className="tabular-nums">{a.usage_pct}%</td>
+                      <td className="tabular-nums">{a.avg_velo?.toFixed(1) ?? '–'}</td>
+                      <td className="tabular-nums">{a.avg_spin ? Math.round(a.avg_spin) : '–'}</td>
+                      <td className="tabular-nums">{a.avg_pfx_x != null ? (a.avg_pfx_x * 12).toFixed(1) : '–'}</td>
+                      <td className="tabular-nums">{a.avg_pfx_z != null ? (a.avg_pfx_z * 12).toFixed(1) : '–'}</td>
+                      <td className="tabular-nums">{a.avg_extension?.toFixed(1) ?? '–'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -273,25 +407,23 @@ export default function PitcherDetail() {
         )}
 
         {/* ── LOCATION TAB ── */}
-        {tab === 1 && (
+        {tab === 2 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {/* All pitches */}
             <div>
-              <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
+              <div className="text-xs tracking-wider mb-2 uppercase font-semibold" style={{ color: '#86868B' }}>
                 All Pitches ({filteredPitches.length})
               </div>
-              <PitchLocationChart pitches={filteredPitches} height={320} />
+              <PitchLocationChart pitches={filteredPitches} height={320} title="" />
             </div>
-            {/* Split by pitch type */}
             {summary.arsenal.filter((a) => !selectedPitchType || a.pitch_type === selectedPitchType)
               .map((a) => {
                 const pts = pitches.filter((p) => p.pitch_type === a.pitch_type)
                 return (
                   <div key={a.pitch_type}>
-                    <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
+                    <div className="text-xs tracking-wider mb-2 uppercase font-semibold" style={{ color: '#86868B' }}>
                       {a.pitch_name || a.pitch_type} ({pts.length})
                     </div>
-                    <PitchLocationChart pitches={pts} height={320} />
+                    <PitchLocationChart pitches={pts} height={320} title="" />
                   </div>
                 )
               })}
@@ -299,17 +431,16 @@ export default function PitcherDetail() {
         )}
 
         {/* ── MOVEMENT TAB ── */}
-        {tab === 2 && (
+        {tab === 3 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <div className="text-xs text-mist tracking-wider mb-2 uppercase font-medium">
+              <div className="text-xs tracking-wider mb-2 uppercase font-semibold" style={{ color: '#86868B' }}>
                 All Pitches ({filteredPitches.length})
               </div>
-              <PitchMovementChart pitches={filteredPitches} />
+              <PitchMovementChart pitches={filteredPitches} title="" />
             </div>
-            {/* Velocity over time by pitch type */}
             <div style={cardStyle} className="p-3">
-              <div className="text-snow text-sm font-medium tracking-wide mb-3">
+              <div className="text-xs tracking-wider mb-2 uppercase font-semibold" style={{ color: '#1D1D1F' }}>
                 Velocity Trend (last 200 pitches)
               </div>
               <VeloTrendChart pitches={pitches.slice(0, 200).reverse()} arsenal={summary.arsenal} />
@@ -318,31 +449,73 @@ export default function PitcherDetail() {
         )}
 
         {/* ── PITCH LOG TAB ── */}
-        {tab === 3 && (
+        {tab === 4 && (
           <div style={cardStyle} className="overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h3 className="text-snow font-semibold tracking-tight">
+            <div
+              className="px-4 py-3 flex items-center justify-between"
+              style={{ borderBottom: '1px solid rgba(0,0,0,0.08)' }}
+            >
+              <h3 className="font-semibold tracking-tight" style={{ color: '#1D1D1F' }}>
                 Pitch Log ({logTotal.toLocaleString()} total)
               </h3>
-              <div className="flex gap-2 items-center text-xs text-mist">
+              <div className="flex gap-2 items-center text-xs" style={{ color: '#86868B' }}>
                 <button
                   disabled={logOffset === 0}
                   onClick={() => setLogOffset(Math.max(0, logOffset - 200))}
-                  className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
-                  style={{ background: '#2C2C2E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
+                  className="px-3 py-1 rounded-full disabled:opacity-40 transition-colors"
+                  style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.12)', color: '#1D1D1F' }}
                 >← Prev</button>
                 <span>Showing {logOffset + 1}–{Math.min(logOffset + 200, logTotal)}</span>
                 <button
                   disabled={logOffset + 200 >= logTotal}
                   onClick={() => setLogOffset(logOffset + 200)}
-                  className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
-                  style={{ background: '#2C2C2E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
+                  className="px-3 py-1 rounded-full disabled:opacity-40 transition-colors"
+                  style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.12)', color: '#1D1D1F' }}
                 >Next →</button>
               </div>
             </div>
             <LeaderboardTable rows={pitches.slice(logOffset, logOffset + 200)} columns={PITCH_LOG_COLS} />
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Savant-style percentile bar ──────────────────────────────────────────────
+function PercentileBar({ label, raw, pct, fmt }) {
+  const pctNum = Math.round(pct * 100)
+  const bubbleStyle = savantColor(pct, true)
+  return (
+    <div className="flex items-center gap-4">
+      <div className="w-32 text-sm flex-shrink-0" style={{ color: '#1D1D1F' }}>{label}</div>
+      <div className="flex-1 relative h-6 rounded-full" style={{ background: '#F5F5F7', border: '1px solid rgba(0,0,0,0.06)' }}>
+        {/* Gradient fill */}
+        <div
+          className="absolute top-0 left-0 h-full rounded-full"
+          style={{
+            width: '100%',
+            background: 'linear-gradient(to right, #2A63B6 0%, #8BB2D8 25%, #F5F5F7 50%, #ED887B 75%, #C42E3A 100%)',
+            opacity: 0.45,
+          }}
+        />
+        {/* Bubble marker */}
+        <div
+          className="absolute top-1/2 rounded-full text-[11px] font-semibold flex items-center justify-center"
+          style={{
+            left: `calc(${pctNum}% - 14px)`,
+            transform: 'translateY(-50%)',
+            width: 28, height: 28,
+            ...bubbleStyle,
+            border: '2px solid #FFFFFF',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+          }}
+        >
+          {pctNum}
+        </div>
+      </div>
+      <div className="w-24 text-right text-sm tabular-nums flex-shrink-0" style={{ color: '#1D1D1F' }}>
+        {fmt ? fmt(raw) : raw}
       </div>
     </div>
   )
@@ -357,9 +530,9 @@ function PitchPill({ active, onClick, label, color }) {
         active
           ? { backgroundColor: color, color: '#fff', border: `2px solid ${color}` }
           : {
-              background: 'rgba(255,255,255,0.05)',
+              background: '#FFFFFF',
               color: '#86868B',
-              border: '2px solid rgba(255,255,255,0.10)',
+              border: '2px solid rgba(0,0,0,0.10)',
             }
       }
     >
@@ -379,11 +552,17 @@ function VeloTrendChart({ pitches, arsenal }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
       <LineChart data={data} margin={{ right: 10, left: -10 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-        <XAxis dataKey="i" tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} />
-        <YAxis domain={['auto', 'auto']} tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+        <XAxis dataKey="i" tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} axisLine={{ stroke: 'rgba(0,0,0,0.15)' }} />
+        <YAxis domain={['auto', 'auto']} tick={{ fill: '#86868B', fontSize: 10 }} tickLine={false} axisLine={{ stroke: 'rgba(0,0,0,0.15)' }} />
         <Tooltip
-          contentStyle={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.12)', color: '#F5F5F7', fontSize: 11 }}
+          contentStyle={{
+            background: '#FFFFFF',
+            border: '1px solid rgba(0,0,0,0.10)',
+            color: '#1D1D1F',
+            fontSize: 11,
+            borderRadius: 8,
+          }}
           formatter={(v, name) => [v?.toFixed(1) + ' mph', PITCH_LABEL[name] || name]}
         />
         {pitchTypes.map((pt) => (

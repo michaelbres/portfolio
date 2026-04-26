@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import Navbar from '../../../components/Navbar'
+import PageHeader from '../../../components/PageHeader'
 import LeaderboardTable from '../../../components/mlb/LeaderboardTable'
 import GameSummary from '../../../components/mlb/GameSummary'
 import { mlb } from '../../../lib/api'
@@ -127,67 +127,39 @@ export default function MLBDashboard() {
 
   const currentCols = tab === 3 ? SEARCH_COLS : tab === 1 ? PITCHING_COLS : HITTING_COLS
 
+  const headerRight = dataStatus && (
+    <div className="text-right text-xs" style={{ color: '#86868B' }}>
+      <div>Last updated: <span style={{ color: '#1D1D1F' }}>{dataStatus.latest_game_date || '–'}</span></div>
+      <div>Total pitches: <span style={{ color: '#1D1D1F' }}>{dataStatus.total_pitches?.toLocaleString() || '–'}</span></div>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-void">
+    <div className="min-h-screen" style={{ background: '#F5F5F7' }}>
       <Navbar />
 
-      {/* Header */}
-      <div
-        className="border-b"
-        style={{ background: '#141414', borderColor: 'rgba(255,255,255,0.08)' }}
-      >
-        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3 mb-1.5">
-              <span
-                className="text-xs font-semibold tracking-widest uppercase px-2.5 py-1 rounded-full"
-                style={{
-                  background: 'rgba(14,165,233,0.12)',
-                  color: '#0EA5E9',
-                  border: '1px solid rgba(14,165,233,0.20)',
-                }}
-              >
-                MLB
-              </span>
-              <h1 className="text-snow font-semibold tracking-tight text-2xl">
-                Statcast Analytics
-              </h1>
-            </div>
-            <p className="text-sm text-mist">
-              Pitch-by-pitch Statcast data — same source as Baseball Savant
-            </p>
-          </div>
-          {dataStatus && (
-            <div className="text-right text-xs text-mist">
-              <div>Last updated: <span className="text-snow">{dataStatus.latest_game_date || '–'}</span></div>
-              <div>Total pitches: <span className="text-snow">{dataStatus.total_pitches?.toLocaleString() || '–'}</span></div>
-            </div>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        kicker="MLB"
+        title="Statcast Analytics"
+        subtitle="Pitch-by-pitch Statcast data — same source as Baseball Savant"
+        right={headerRight}
+      />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Tabs */}
+        {/* Tabs — Apple segmented control */}
         <div
-          className="flex gap-1 mb-6 p-1 rounded-xl"
-          style={{ background: '#1C1C1E', width: 'fit-content' }}
+          className="flex gap-1 mb-6 p-1 rounded-full overflow-x-auto"
+          style={{ background: '#E8E8ED', width: 'fit-content' }}
         >
           {TABS.map((t, i) => (
             <button
               key={t}
               onClick={() => setTab(i)}
-              className="px-4 py-2 text-sm rounded-lg transition-all duration-150 font-medium"
+              className="px-4 py-1.5 text-sm rounded-full transition-all duration-150 font-medium whitespace-nowrap"
               style={
                 tab === i
-                  ? {
-                      background: 'rgba(14,165,233,0.15)',
-                      color: '#0EA5E9',
-                      border: '1px solid rgba(14,165,233,0.25)',
-                    }
-                  : {
-                      color: '#86868B',
-                      border: '1px solid transparent',
-                    }
+                  ? { background: '#FFFFFF', color: '#1D1D1F', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }
+                  : { background: 'transparent', color: '#86868B' }
               }
             >
               {t}
@@ -203,24 +175,22 @@ export default function MLBDashboard() {
           />
         )}
 
-        {/* Game Summary tab — self-contained */}
         {tab === 2 && <GameSummary season={filters.season} />}
 
-        {/* Leaderboard / Search tabs */}
         {tab !== 2 && (
           <>
             {/* Results header */}
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-mist">
+              <span className="text-sm" style={{ color: '#86868B' }}>
                 {loading ? 'Loading…' : `${total.toLocaleString()} result${total !== 1 ? 's' : ''}`}
               </span>
               {tab === 3 && (
-                <div className="flex gap-2 items-center text-xs text-mist">
+                <div className="flex gap-2 items-center text-xs" style={{ color: '#86868B' }}>
                   <button
                     disabled={filters.offset === 0}
                     onClick={() => setFilter('offset', Math.max(0, filters.offset - filters.limit))}
-                    className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
-                    style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
+                    className="px-3 py-1 rounded-full disabled:opacity-40 transition-colors"
+                    style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.12)', color: '#1D1D1F' }}
                   >
                     ← Prev
                   </button>
@@ -228,8 +198,8 @@ export default function MLBDashboard() {
                   <button
                     disabled={filters.offset + filters.limit >= total}
                     onClick={() => setFilter('offset', filters.offset + filters.limit)}
-                    className="px-3 py-1 rounded-lg disabled:opacity-40 transition-colors"
-                    style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.10)', color: '#F5F5F7' }}
+                    className="px-3 py-1 rounded-full disabled:opacity-40 transition-colors"
+                    style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.12)', color: '#1D1D1F' }}
                   >
                     Next →
                   </button>
@@ -240,10 +210,10 @@ export default function MLBDashboard() {
             {/* Table */}
             <div
               className="rounded-xl overflow-hidden"
-              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.08)' }}
             >
               {loading ? (
-                <div className="py-20 text-center text-mist text-sm animate-pulse" style={{ background: '#141414' }}>
+                <div className="py-20 text-center text-sm animate-pulse" style={{ color: '#86868B' }}>
                   Loading Statcast data…
                 </div>
               ) : (
@@ -266,7 +236,7 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
   return (
     <div
       className="rounded-xl p-4 mb-4 flex flex-wrap gap-3 items-end"
-      style={{ background: '#1C1C1E', border: '1px solid rgba(255,255,255,0.08)' }}
+      style={{ background: '#FFFFFF', border: '1px solid rgba(0,0,0,0.08)' }}
     >
       {/* Season */}
       <FilterSelect
@@ -276,7 +246,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         options={[{ value: 2026, label: '2026' }, { value: 2025, label: '2025' }]}
       />
 
-      {/* Team */}
       <FilterSelect
         label="Team"
         value={filters.team}
@@ -284,7 +253,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         options={[{ value: '', label: 'All' }, ...teams.map((t) => ({ value: t, label: t }))]}
       />
 
-      {/* Pitcher/Batter Hand */}
       <FilterSelect
         label={tab === 0 ? 'Bats' : 'Throws'}
         value={tab === 0 ? filters.stand : filters.p_throws}
@@ -292,7 +260,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         options={[{ value: '', label: 'All' }, { value: 'R', label: 'R' }, { value: 'L', label: 'L' }]}
       />
 
-      {/* Pitch type (search tab only) */}
       {tab === 3 && (
         <FilterSelect
           label="Pitch Type"
@@ -305,7 +272,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         />
       )}
 
-      {/* Min pitches (pitching leaderboard) */}
       {tab === 1 && (
         <FilterInput
           label="Min Pitches"
@@ -315,7 +281,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         />
       )}
 
-      {/* Min BBE (hitting leaderboard) */}
       {tab === 0 && (
         <FilterInput
           label="Min BBE"
@@ -325,7 +290,6 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
         />
       )}
 
-      {/* Rows per page (search tab) */}
       {tab === 3 && (
         <FilterSelect
           label="Rows"
@@ -344,9 +308,9 @@ function FilterBar({ tab, filters, setFilter, teams, pitchTypes }) {
 }
 
 const selectStyle = {
-  background: '#2C2C2E',
-  border: '1px solid rgba(255,255,255,0.10)',
-  color: '#F5F5F7',
+  background: '#FFFFFF',
+  border: '1px solid rgba(0,0,0,0.12)',
+  color: '#1D1D1F',
   borderRadius: '0.5rem',
   padding: '0.375rem 0.625rem',
   fontSize: '0.875rem',
@@ -356,7 +320,7 @@ const selectStyle = {
 function FilterSelect({ label, value, onChange, options }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-mist uppercase tracking-wider">{label}</label>
+      <label className="text-xs uppercase tracking-wider" style={{ color: '#86868B' }}>{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -373,7 +337,7 @@ function FilterSelect({ label, value, onChange, options }) {
 function FilterInput({ label, type = 'text', value, onChange }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-xs text-mist uppercase tracking-wider">{label}</label>
+      <label className="text-xs uppercase tracking-wider" style={{ color: '#86868B' }}>{label}</label>
       <input
         type={type}
         value={value}
