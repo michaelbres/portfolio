@@ -6,6 +6,7 @@ import PitcherDetail from './pages/sports/mlb/PitcherDetail'
 import FairValue from './pages/sports/mlb/FairValue'
 import StuffPlusLeaderboard from './pages/sports/mlb/StuffPlusLeaderboard'
 import Betting from './pages/Betting'
+import Cards from './pages/cards/Cards'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/sports/mlb/fair-value"     element={<FairValue />} />
         <Route path="/sports/mlb/stuff-plus"     element={<StuffPlusLeaderboard />} />
         <Route path="/betting"                   element={<Betting />} />
+        <Route path="/cards"                     element={<Cards />} />
       </Routes>
     </BrowserRouter>
   )

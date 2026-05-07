@@ -7,6 +7,7 @@ const LINKS = [
   { to: '/sports/mlb/fair-value',   label: 'Fair Value' },
   { to: '/sports/mlb/stuff-plus',   label: 'Stuff+' },
   { to: '/betting',                 label: 'Betting' },
+  { to: '/cards',                   label: 'Cards' },
 ]
 
 export default function Navbar() {

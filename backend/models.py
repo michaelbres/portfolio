@@ -277,6 +277,42 @@ class FairValueLineupSlot(Base):
     )
 
 
+# ── Card Hierarchy Tables ─────────────────────────────────────────────────────
+
+class CardSetTier(Base):
+    """Brand/product tier — how desirable is the set itself (lower tier = better)."""
+    __tablename__ = "card_set_tiers"
+
+    id         = Column(Integer, primary_key=True)
+    set_name   = Column(String(100), nullable=False)
+    sport      = Column(String(20), default='all')  # baseball, football, basketball, pokemon, all
+    tier       = Column(Integer, nullable=False)     # 1 = most desirable
+    notes      = Column(Text)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class CardInsertType(Base):
+    """Card type / parallel tier within any set (lower rank = more desirable)."""
+    __tablename__ = "card_insert_types"
+
+    id          = Column(Integer, primary_key=True)
+    insert_name = Column(String(100), nullable=False)
+    rank        = Column(Integer, nullable=False)   # 1 = most desirable
+    notes       = Column(Text)
+    updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class CardSpecialFlag(Base):
+    """Special designations that multiply a card's fair value (RC, HOF, etc.)."""
+    __tablename__ = "card_special_flags"
+
+    id          = Column(Integer, primary_key=True)
+    flag_name   = Column(String(100), nullable=False)
+    multiplier  = Column(Float, nullable=False, default=1.0)
+    description = Column(Text)
+    updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
+
+
 class FairValueCalibration(Base):
     """
     Post-game calibration record linking model output to closing line and outcome.
