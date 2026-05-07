@@ -53,28 +53,29 @@ def fetch_completed_sales(
 
     category = _CATEGORY_IDS.get(sport, "")
 
+    headers = {
+        "X-EBAY-SOA-SECURITY-APPNAME":    app_id,
+        "X-EBAY-SOA-OPERATION-NAME":      "findCompletedItems",
+        "X-EBAY-SOA-SERVICE-VERSION":     "1.13.0",
+        "X-EBAY-SOA-RESPONSE-DATA-FORMAT":"XML",
+    }
+
     params: dict[str, str] = {
-        "X-EBAY-SOA-SECURITY-APPNAME": app_id,
-        "X-EBAY-SOA-OPERATION-NAME": "findCompletedItems",
-        "X-EBAY-SOA-SERVICE-VERSION": "1.13.0",
-        "X-EBAY-SOA-RESPONSE-DATA-FORMAT": "XML",
-        "keywords": keywords,
-        "sortOrder": "EndTimeSoonest",
-        "paginationInput.entriesPerPage": str(min(max_results, 100)),
-        "paginationInput.pageNumber": "1",
-        # Sold only
-        "itemFilter(0).name": "SoldItemsOnly",
-        "itemFilter(0).value": "true",
-        # US only
-        "itemFilter(1).name": "LocatedIn",
-        "itemFilter(1).value": "US",
-        "outputSelector(0)": "SellerInfo",
+        "keywords":                        keywords,
+        "sortOrder":                       "EndTimeSoonest",
+        "paginationInput.entriesPerPage":  str(min(max_results, 100)),
+        "paginationInput.pageNumber":      "1",
+        "itemFilter(0).name":              "SoldItemsOnly",
+        "itemFilter(0).value":             "true",
+        "itemFilter(1).name":              "LocatedIn",
+        "itemFilter(1).value":             "US",
+        "outputSelector(0)":               "SellerInfo",
     }
     if category:
         params["categoryId"] = category
 
     try:
-        resp = requests.get(_URL, params=params, timeout=20)
+        resp = requests.get(_URL, headers=headers, params=params, timeout=20)
         resp.raise_for_status()
     except requests.RequestException as e:
         log.error("eBay API request failed: %s", e)

@@ -17,7 +17,7 @@ discord_webhook_url: "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
 
 # eBay App ID (Client ID from developer.ebay.com)
 # Free to register — only needs Finding API (no OAuth required for searches)
-ebay_app_id: "PASTE_YOUR_EBAY_APP_ID_HERE"
+ebay_app_id: "MichaelB-Cards-PRD-d8f86d25c-254aadff"
 
 # How often to check for new listings (seconds)
 # eBay limits: ~5000 calls/day on free tier → safe floor is 60s
