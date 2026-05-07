@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends
+import os
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from database import get_db
 from models import CardSetTier, CardInsertType, CardSpecialFlag
+from cards.ebay import fetch_completed_sales
+from cards.parser import parse_title, group_key
+from cards.valuation import compute_group_stats, fair_value
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -75,24 +82,9 @@ _DEFAULT_SETS = [
     ("Panini Mosaic",            "basketball",3,"Mid-tier"),
     ("Donruss Optic",            "basketball",3,"Chrome Donruss; decent market"),
     ("Panini Contenders",        "basketball",3,"Ticket autos; key RC product"),
-    ("Panini Hoops Premium",     "basketball",3,"Mid-range Hoops product"),
+    ("Panini Hoops Premium Stock","basketball",3,"Mid-range Hoops product"),
     ("Panini Hoops",             "basketball",4,"Entry-level basketball"),
     ("Panini Donruss",           "basketball",4,"Base retail"),
-    # ── Pokémon ───────────────────────────────────────────────────────────────
-    ("Pokémon 151",              "pokemon",  1, "Modern classic; Charizard EX anchor"),
-    ("Pokémon Scarlet & Violet Base","pokemon",1,"Current era flagship"),
-    ("Pokémon Obsidian Flames",  "pokemon",  1, "Charizard ex; most liquid modern set"),
-    ("Pokémon Paradox Rift",     "pokemon",  2, "Strong pull rates and market"),
-    ("Pokémon Temporal Forces",  "pokemon",  2, "ACE SPEC chase cards"),
-    ("Pokémon Paldean Fates",    "pokemon",  2, "Shiny Charizard anchor"),
-    ("Pokémon Crown Zenith",     "pokemon",  2, "Galarian Gallery set drives demand"),
-    ("Pokémon Silver Tempest",   "pokemon",  3, "Lugia VSTAR anchor"),
-    ("Pokémon Lost Origin",      "pokemon",  3, "Giratina V pulls value"),
-    ("Pokémon Base Set",         "pokemon",  1, "Vintage; Charizard Holo defines the hobby"),
-    ("Pokémon Jungle",           "pokemon",  2, "Vintage; classic Vaporeon/Flareon holos"),
-    ("Pokémon Fossil",           "pokemon",  2, "Vintage"),
-    ("Pokémon Team Rocket",      "pokemon",  2, "Vintage; Dark Charizard"),
-    ("Pokémon Neo Genesis",      "pokemon",  2, "Vintage; Lugia era"),
 ]
 
 _DEFAULT_INSERTS = [
@@ -121,10 +113,6 @@ _DEFAULT_FLAGS = [
     ("Short Print Photo Variation",    1.15,"SP variant within same set"),
     ("Prospect (Non-Chrome)",          0.8, "Minor league prospect, not first Bowman Chrome"),
     ("Retired (Non-HOF)",              0.75,"Retired player without HOF status"),
-    ("Pokémon Holo (Base Set Era)",    2.0, "Pre-Neo vintage holographic"),
-    ("Pokémon Full Art / Alt Art",     1.5, "Modern full-art or alternate-art treatment"),
-    ("Pokémon ex / V / VMAX",         1.3, "Main rarity mechanic for modern era"),
-    ("Pokémon Trainer / Supporter",   1.1, "Key trainer cards often chase-worthy"),
 ]
 
 
@@ -146,8 +134,7 @@ def _seed(db: Session):
         ])
     db.commit()
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Hierarchy ─────────────────────────────────────────────────────────────────
 
 @router.get("/hierarchy")
 def get_hierarchy(db: Session = Depends(get_db)):
@@ -161,20 +148,168 @@ def get_hierarchy(db: Session = Depends(get_db)):
                     for r in db.query(CardSpecialFlag).order_by(CardSpecialFlag.multiplier.desc()).all()],
     }
 
-
 @router.put("/hierarchy")
 def save_hierarchy(body: HierarchyUpdate, db: Session = Depends(get_db)):
-    # Replace all three tables with the incoming payload
     db.query(CardSetTier).delete()
     db.query(CardInsertType).delete()
     db.query(CardSpecialFlag).delete()
-
     for s in body.sets:
         db.add(CardSetTier(set_name=s.set_name, sport=s.sport, tier=s.tier, notes=s.notes))
     for i in body.inserts:
         db.add(CardInsertType(insert_name=i.insert_name, rank=i.rank, notes=i.notes))
     for f in body.flags:
         db.add(CardSpecialFlag(flag_name=f.flag_name, multiplier=f.multiplier, description=f.description))
-
     db.commit()
     return {"ok": True}
+
+# ── Player search ─────────────────────────────────────────────────────────────
+
+@router.get("/player-search")
+def player_search(
+    name: str = Query(..., min_length=2),
+    sport: str = Query("all"),
+    days: int  = Query(90, ge=7, le=365),
+    db: Session = Depends(get_db),
+):
+    """
+    Search eBay completed sales for a player, parse and group results.
+    Returns grouped card types with stats and fair value estimates.
+    """
+    app_id = os.getenv("EBAY_APP_ID", "")
+    if not app_id:
+        raise HTTPException(503, "EBAY_APP_ID not configured in backend/.env")
+
+    # Fetch from eBay
+    raw_sales = fetch_completed_sales(
+        app_id=app_id,
+        keywords=name,
+        sport=sport,
+        days=days,
+        max_results=100,
+    )
+
+    if not raw_sales:
+        return {"player": name, "sport": sport, "days": days, "groups": [], "total_sales": 0}
+
+    # Parse titles and group
+    parsed = [parse_title(s["title"]) | {"price": s["price"], "sold_at": s.get("sold_at"), "url": s["url"]} for s in raw_sales]
+
+    groups: dict[str, list] = {}
+    for p in parsed:
+        k = group_key(p)
+        groups.setdefault(k, []).append(p)
+
+    # Load hierarchy for RC multipliers
+    _seed(db)
+    flags = {f.flag_name: f.multiplier for f in db.query(CardSpecialFlag).all()}
+    rc_mult = flags.get("Rookie Card (RC)", 2.5)
+    set_tiers = {r.set_name: r.tier for r in db.query(CardSetTier).all()}
+
+    # Build group summaries
+    group_list = []
+    for key, sales in groups.items():
+        sample = sales[0]
+        is_rookie = any(s.get("is_rookie") for s in sales)
+        stats = compute_group_stats(sales)
+        set_name = sample.get("set_name")
+        tier = set_tiers.get(set_name, 3) if set_name else 3
+
+        group_list.append({
+            "key":         key,
+            "year":        sample.get("year"),
+            "set_name":    set_name,
+            "set_tier":    tier,
+            "insert_type": sample.get("insert_type"),
+            "print_run":   sample.get("print_run"),
+            "is_rookie":   is_rookie,
+            "is_auto":     sample.get("is_auto"),
+            "is_patch":    sample.get("is_patch"),
+            "grade":       sample.get("grade"),
+            "stats":       stats,
+            "sales":       sorted(
+                [{"price": s["price"],
+                  "sold_at": s["sold_at"].date().isoformat() if s.get("sold_at") else None,
+                  "url": s["url"],
+                  "title": s["raw_title"]}
+                 for s in sales],
+                key=lambda x: x["sold_at"] or "",
+                reverse=True,
+            ),
+        })
+
+    # Compute fair value for each group
+    for g in group_list:
+        mult = rc_mult if g["is_rookie"] else 1.0
+        g["fair_value"] = fair_value(g, group_list, rc_multiplier=mult)
+
+    # Sort: by set_tier asc, then by print_run asc (rarest first within tier)
+    group_list.sort(key=lambda g: (
+        g["set_tier"],
+        g.get("print_run") or 9999,
+        g.get("insert_type") or "",
+    ))
+
+    return {
+        "player":      name,
+        "sport":       sport,
+        "days":        days,
+        "groups":      group_list,
+        "total_sales": len(raw_sales),
+    }
+
+
+@router.get("/set-search")
+def set_search(
+    name: str  = Query(..., min_length=2),
+    sport: str = Query("all"),
+    days: int  = Query(90, ge=7, le=365),
+    db: Session = Depends(get_db),
+):
+    """Search eBay completed sales by set name."""
+    app_id = os.getenv("EBAY_APP_ID", "")
+    if not app_id:
+        raise HTTPException(503, "EBAY_APP_ID not configured in backend/.env")
+
+    raw_sales = fetch_completed_sales(app_id=app_id, keywords=name, sport=sport, days=days)
+
+    parsed = [
+        parse_title(s["title"]) | {"price": s["price"], "sold_at": s.get("sold_at"), "url": s["url"]}
+        for s in raw_sales
+    ]
+
+    # Group by player-inferred label + card spec
+    # For set search we show top cards by value
+    groups: dict[str, list] = {}
+    for p in parsed:
+        k = group_key(p)
+        groups.setdefault(k, []).append(p)
+
+    result = []
+    for key, sales in groups.items():
+        sample = sales[0]
+        stats = compute_group_stats(sales)
+        result.append({
+            "key":         key,
+            "year":        sample.get("year"),
+            "set_name":    sample.get("set_name") or name,
+            "insert_type": sample.get("insert_type"),
+            "print_run":   sample.get("print_run"),
+            "is_rookie":   any(s.get("is_rookie") for s in sales),
+            "is_auto":     sample.get("is_auto"),
+            "grade":       sample.get("grade"),
+            "stats":       stats,
+            "sales":       [{"price": s["price"],
+                             "sold_at": s["sold_at"].date().isoformat() if s.get("sold_at") else None,
+                             "url": s["url"],
+                             "title": s["raw_title"]} for s in sales],
+        })
+
+    result.sort(key=lambda g: -(g["stats"].get("avg_price") or 0))
+
+    return {
+        "set_name":    name,
+        "sport":       sport,
+        "days":        days,
+        "groups":      result[:50],
+        "total_sales": len(raw_sales),
+    }

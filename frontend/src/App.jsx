@@ -7,6 +7,7 @@ import FairValue from './pages/sports/mlb/FairValue'
 import StuffPlusLeaderboard from './pages/sports/mlb/StuffPlusLeaderboard'
 import Betting from './pages/Betting'
 import Cards from './pages/cards/Cards'
+import HierarchyEditor from './pages/cards/HierarchyEditor'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/sports/mlb/stuff-plus"     element={<StuffPlusLeaderboard />} />
         <Route path="/betting"                   element={<Betting />} />
         <Route path="/cards"                     element={<Cards />} />
+        <Route path="/cards/hierarchy"           element={<HierarchyEditor />} />
       </Routes>
     </BrowserRouter>
   )
