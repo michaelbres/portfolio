@@ -225,3 +225,86 @@ def send_ntfy_pokemon_lot_alert(topic: str, listing: dict) -> bool:
     except requests.RequestException as e:
         log.error("ntfy push failed: %s", e)
         return False
+
+
+# ── Sports card lot alerts ─────────────────────────────────────────────────────
+
+_SPORTS_EMBED_COLOR = 0x1E90FF  # dodger blue
+
+
+def send_sports_lot_alert(webhook_url: str, listing: dict) -> bool:
+    """Post a Discord embed for a sports card lot find."""
+    price = listing["price"]
+    title = listing["title"]
+    url = listing.get("url", "")
+    image_url = listing.get("image_url")
+    listed_at: Optional[datetime] = listing.get("listed_at")
+    condition = listing.get("condition", "Unknown")
+
+    description_lines = [
+        f"**${price:.2f}** BIN — sports card collection/lot",
+        f"Condition: {condition}",
+    ]
+    if listed_at:
+        description_lines.append(f"Listed: <t:{int(listed_at.timestamp())}:R>")
+
+    embed = {
+        "title": "🏈⚾🏀  Sports Lot Found",
+        "description": "\n".join(description_lines),
+        "color": _SPORTS_EMBED_COLOR,
+        "fields": [
+            {"name": "Listing Title", "value": title[:256], "inline": False},
+            {
+                "name": "Grading checklist",
+                "value": (
+                    "• Pull any RC/rookie, autograph, or parallel from the lot\n"
+                    "• Check corners, centering, and surface under good light\n"
+                    "• PSA 9/10 candidates: sharp corners, 60/40 centering or better, no scratches\n"
+                    "• Cross-reference pop report — low-pop grades carry the most premium"
+                ),
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Card Monitor · Sports Lot Scanner · BIN $1k–$3k"},
+    }
+
+    if url:
+        embed["url"] = url
+    if image_url:
+        embed["image"] = {"url": image_url}
+
+    payload = {"username": "Card Monitor", "embeds": [embed]}
+
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        log.info("Discord sports lot alert sent ($%.2f)", price)
+        return True
+    except requests.RequestException as e:
+        log.error("Discord webhook failed: %s", e)
+        return False
+
+
+def send_ntfy_sports_lot_alert(topic: str, listing: dict) -> bool:
+    price = listing["price"]
+    title = listing["title"]
+    url = listing.get("url", "")
+
+    ntfy_url = topic if topic.startswith("http") else f"https://ntfy.sh/{topic}"
+
+    headers = {
+        "Title": f"Sports Lot ${price:.2f} — Card Monitor",
+        "Priority": "high",
+        "Tags": "sports_medal,rotating_light",
+        "Click": url or "",
+    }
+    body = f"${price:.2f} BIN sports lot — check for RCs, autos, and grade candidates\n{title[:200]}"
+
+    try:
+        resp = requests.post(ntfy_url, data=body.encode("utf-8"), headers=headers, timeout=10)
+        resp.raise_for_status()
+        log.info("ntfy sports lot alert sent ($%.2f)", price)
+        return True
+    except requests.RequestException as e:
+        log.error("ntfy push failed: %s", e)
+        return False

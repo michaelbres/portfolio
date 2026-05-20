@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-eBay Card Monitor — three parallel scanners in one process.
+eBay Card Monitor — four parallel scanners in one process.
 
   1. Chrome Mislabel Sniper  — finds Topps Chrome cards priced as base that may
                                actually be lightboard or image-variation SPs.
   2. Chrome Mispriced Sniper — finds *labeled* lightboard / image-variation cards
                                that are priced significantly below market value.
   3. Pokemon Lot Scanner     — finds BIN lots of Pokemon cards in LP or better
-                               condition priced at $300 or more.
+                               condition, $1,000–$3,000.
+  4. Sports Card Lot Scanner — finds BIN sports card collections and lots,
+                               $1,000–$3,000, suitable for flipping or grading.
 
 Usage:
     python monitor.py                   # continuous loop (uses config.yaml next to script)
@@ -36,6 +38,7 @@ from notifier import (
     send_alert, send_startup_message,
     send_ntfy_alert, send_ntfy_startup,
     send_pokemon_lot_alert, send_ntfy_pokemon_lot_alert,
+    send_sports_lot_alert, send_ntfy_sports_lot_alert,
 )
 
 logging.basicConfig(
@@ -46,9 +49,9 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ── Condition keyword sets (Pokemon lot filtering) ────────────────────────────
+# ── Condition keyword sets ─────────────────────────────────────────────────────
 
-# At least one of these must appear in the title (case-insensitive)
+# Pokemon lots: require at least one positive condition signal in the title
 _POKEMON_CONDITION_GOOD = {
     "nm", "n/m", "nm-m", "nm/m", "nm+",
     "near mint", "near-mint",
@@ -60,8 +63,8 @@ _POKEMON_CONDITION_GOOD = {
     "ex/nm", "ex+", "excellent",
 }
 
-# Reject listings that contain any of these (bad condition signals)
-_POKEMON_CONDITION_BAD = {
+# Reject any listing containing these (shared bad-condition signals)
+_CONDITION_BAD = {
     "hp",
     "heavily played", "heavy played",
     "mp",
@@ -70,6 +73,17 @@ _POKEMON_CONDITION_BAD = {
     "damaged",
     "water damage",
     "bent", "creased",
+}
+
+# Alias used by Pokemon scanner
+_POKEMON_CONDITION_BAD = _CONDITION_BAD
+
+# Sports lots: sellers at $1k+ rarely state condition in the title.
+# We only reject explicit bad-condition signals — no positive keyword required.
+_SPORTS_COLLECTION_KEYWORDS = {
+    "lot", "collection", "estate", "bundle", "bulk",
+    "set", "complete set", "run", "hoard", "haul", "case",
+    "break", "cards",
 }
 
 
@@ -297,14 +311,16 @@ def poll_pokemon_lots(
     dry_run: bool,
 ) -> list[dict]:
     """
-    Scans for Pokemon card lots: BIN, LP or better condition, $300+, no max.
+    Scans for Pokemon card lots: BIN, LP or better condition, $1k–$3k.
     Paginates across all results so no listings are missed.
     """
     poke_cfg = config.get("pokemon_lots", {})
     if not poke_cfg.get("enabled", True):
         return []
 
-    min_price = float(poke_cfg.get("min_price", 300.0))
+    min_price = float(poke_cfg.get("min_price", 1000.0))
+    max_price_cfg = poke_cfg.get("max_price")
+    max_price = float(max_price_cfg) if max_price_cfg is not None else None
     max_pages = int(poke_cfg.get("max_pages", 5))
     search_queries = poke_cfg.get("search_queries", ["pokemon cards lot NM LP"])
     extra_exclude = poke_cfg.get("exclude_keywords", [])
@@ -313,15 +329,15 @@ def poll_pokemon_lots(
     ntfy_topic = config.get("ntfy_topic", "")
 
     new_hits = []
-    seen_this_pass: set[str] = set()   # dedup across multiple search queries
+    seen_this_pass: set[str] = set()
 
     for query in search_queries:
-        log.debug("Pokemon lots search: %r  min=$%.0f", query, min_price)
+        log.debug("Pokemon lots: %r  $%.0f–%s", query, min_price, f"${max_price:.0f}" if max_price else "∞")
 
         listings = client.find_items_all_pages(
             keywords=query,
             min_price=min_price,
-            max_price=None,           # no upper limit
+            max_price=max_price,
             buy_it_now_only=True,
             max_pages=max_pages,
         )
@@ -335,16 +351,13 @@ def poll_pokemon_lots(
             if item_id in seen_ids or item_id in seen_this_pass:
                 continue
 
-            # Basic sanity — must mention pokemon
             if "pokemon" not in tl:
                 continue
 
-            # Filter bad condition signals
             if not _pokemon_condition_ok(tl):
                 log.debug("Skipping (condition) '%s'", title[:60])
                 continue
 
-            # Custom excludes from config
             if title_has_excluded_word(title, extra_exclude):
                 log.debug("Skipping (excluded kw) '%s'", title[:60])
                 continue
@@ -352,10 +365,7 @@ def poll_pokemon_lots(
             seen_this_pass.add(item_id)
             _mark_seen(seen_ids, seen_path, item_id)
 
-            log.info(
-                "POKEMON LOT  $%-8.2f  %s",
-                price, title[:55],
-            )
+            log.info("POKEMON LOT  $%-8.2f  %s", price, title[:55])
             new_hits.append({"type": "pokemon_lot", "listing": listing})
 
             if not dry_run:
@@ -365,6 +375,85 @@ def poll_pokemon_lots(
                     send_pokemon_lot_alert(webhook, listing)
 
     return new_hits
+
+
+# ── Scanner 4: Sports card lot monitor ────────────────────────────────────────
+
+def poll_sports_lots(
+    config: dict,
+    client: EbayFindingClient,
+    seen_ids: set[str],
+    dry_run: bool,
+) -> list[dict]:
+    """
+    Scans for sports card collections/lots: BIN, $1k–$3k.
+    Does not require condition keywords in title — sellers at this price range
+    rarely label condition, so we just reject explicit bad-condition signals.
+    Confirms the listing looks like a collection (lot/collection/estate keywords)
+    to filter out expensive singles.
+    """
+    sports_cfg = config.get("sports_card_lots", {})
+    if not sports_cfg.get("enabled", True):
+        return []
+
+    min_price = float(sports_cfg.get("min_price", 1000.0))
+    max_price_cfg = sports_cfg.get("max_price")
+    max_price = float(max_price_cfg) if max_price_cfg is not None else None
+    max_pages = int(sports_cfg.get("max_pages", 5))
+    search_queries = sports_cfg.get("search_queries", ["sports cards lot collection"])
+    extra_exclude = sports_cfg.get("exclude_keywords", [])
+    seen_path = config["seen_ids_file"]
+    webhook = config.get("discord_webhook_url", "")
+    ntfy_topic = config.get("ntfy_topic", "")
+
+    new_hits = []
+    seen_this_pass: set[str] = set()
+
+    for query in search_queries:
+        log.debug("Sports lots: %r  $%.0f–%s", query, min_price, f"${max_price:.0f}" if max_price else "∞")
+
+        listings = client.find_items_all_pages(
+            keywords=query,
+            min_price=min_price,
+            max_price=max_price,
+            buy_it_now_only=True,
+            max_pages=max_pages,
+        )
+
+        for listing in listings:
+            item_id = listing["item_id"]
+            title = listing["title"]
+            price = listing["price"]
+            tl = title.lower()
+
+            if item_id in seen_ids or item_id in seen_this_pass:
+                continue
+
+            # Reject explicit bad-condition signals
+            if title_has_any(tl, _CONDITION_BAD):
+                log.debug("Skipping (bad condition) '%s'", title[:60])
+                continue
+
+            # Must look like a collection not a single card
+            if not title_has_any(tl, _SPORTS_COLLECTION_KEYWORDS):
+                log.debug("Skipping (looks like single) '%s'", title[:60])
+                continue
+
+            if title_has_excluded_word(title, extra_exclude):
+                log.debug("Skipping (excluded kw) '%s'", title[:60])
+                continue
+
+            seen_this_pass.add(item_id)
+            _mark_seen(seen_ids, seen_path, item_id)
+
+            log.info("SPORTS LOT   $%-8.2f  %s", price, title[:55])
+            new_hits.append({"type": "sports_lot", "listing": listing})
+
+            if not dry_run:
+                if ntfy_topic:
+                    send_ntfy_sports_lot_alert(ntfy_topic, listing)
+                if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
+                    send_sports_lot_alert(webhook, listing)
 
 
 # ── Unified poll ──────────────────────────────────────────────────────────────
@@ -379,13 +468,14 @@ def poll_once(
     hits += poll_chrome_mislabel(config, client, seen_ids, dry_run)
     hits += poll_chrome_mispriced(config, client, seen_ids, dry_run)
     hits += poll_pokemon_lots(config, client, seen_ids, dry_run)
+    hits += poll_sports_lots(config, client, seen_ids, dry_run)
     return hits
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="eBay card monitor — Chrome variations + Pokemon lots")
+    parser = argparse.ArgumentParser(description="eBay card monitor — Chrome variations + Pokemon/sports lots")
     parser.add_argument(
         "--config",
         default=str(Path(__file__).parent / "config.yaml"),
@@ -420,19 +510,29 @@ def main():
     players = chrome_cfg.get("players", [])
     poke_cfg = config.get("pokemon_lots", {})
     pokemon_enabled = poke_cfg.get("enabled", True)
-    pokemon_min = float(poke_cfg.get("min_price", 300.0))
+    pokemon_min = float(poke_cfg.get("min_price", 1000.0))
+    pokemon_max = poke_cfg.get("max_price")
+    sports_cfg = config.get("sports_card_lots", {})
+    sports_enabled = sports_cfg.get("enabled", True)
+    sports_min = float(sports_cfg.get("min_price", 1000.0))
+    sports_max = sports_cfg.get("max_price")
+
+    def _price_range(lo: float, hi) -> str:
+        return f"${lo:.0f}–${float(hi):.0f}" if hi else f"${lo:.0f}+"
 
     if args.test_notify:
         sent = False
+        watch_summary = [p["name"] for p in players]
+        if pokemon_enabled:
+            watch_summary.append(f"Pokemon lots BIN {_price_range(pokemon_min, pokemon_max)}")
+        if sports_enabled:
+            watch_summary.append(f"Sports card lots BIN {_price_range(sports_min, sports_max)}")
         if ntfy_topic:
             log.info("Sending test ntfy push to topic '%s'...", ntfy_topic)
-            send_ntfy_startup(ntfy_topic, [p["name"] for p in players])
+            send_ntfy_startup(ntfy_topic, watch_summary)
             sent = True
         if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":
             log.info("Sending test Discord embed...")
-            watch_summary = [p["name"] for p in players]
-            if pokemon_enabled:
-                watch_summary.append(f"Pokemon lots (BIN $300+)")
             send_startup_message(webhook, watch_summary)
             sent = True
         if not sent:
@@ -445,16 +545,19 @@ def main():
     seen_ids = load_seen_ids(seen_path)
 
     log.info(
-        "Monitor started — %d Chrome player(s), Pokemon lots %s, %d listing(s) already seen",
+        "Monitor started — %d Chrome player(s) | Pokemon lots %s | Sports lots %s | %d seen",
         len(players),
-        f"enabled (min ${pokemon_min:.0f})" if pokemon_enabled else "disabled",
+        _price_range(pokemon_min, pokemon_max) if pokemon_enabled else "disabled",
+        _price_range(sports_min, sports_max) if sports_enabled else "disabled",
         len(seen_ids),
     )
 
     if not args.dry_run:
         watch_summary = [p["name"] for p in players]
         if pokemon_enabled:
-            watch_summary.append(f"Pokemon lots BIN $300+")
+            watch_summary.append(f"Pokemon lots BIN {_price_range(pokemon_min, pokemon_max)}")
+        if sports_enabled:
+            watch_summary.append(f"Sports card lots BIN {_price_range(sports_min, sports_max)}")
         if ntfy_topic:
             send_ntfy_startup(ntfy_topic, watch_summary)
         if webhook and webhook != "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE":

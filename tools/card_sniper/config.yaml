@@ -142,35 +142,30 @@ chrome_variations:
 pokemon_lots:
   enabled: true
 
-  # Minimum price — only alert on lots $300 or more
-  min_price: 300.00
-  # No max price configured — we want all lots over $300
+  # Target range: lots priced between $1,000 and $3,000
+  min_price: 1000.00
+  max_price: 3000.00
 
-  # How many eBay result pages to pull per search query (100 results/page).
-  # 5 pages = up to 500 results per query — covers the full active inventory
-  # for high-priced Pokemon lots. Increase if you see gaps.
-  max_pages: 5
+  # Pages to pull per search query (100 results/page = 500 total per query).
+  # At $1k+ there are far fewer listings, so 3 pages is usually enough.
+  max_pages: 3
 
-  # Search queries to run. Each is a separate eBay keyword search.
-  # Results are automatically deduplicated across queries.
+  # Each query runs as a separate eBay search. Results are deduplicated so
+  # a listing appearing in multiple queries only fires one alert.
   search_queries:
-    - "pokemon cards lot NM"
+    - "pokemon cards lot NM collection"
     - "pokemon cards lot near mint"
-    - "pokemon cards lot lightly played"
-    - "pokemon lot collection NM LP"
-    - "pokemon tcg lot NM"
+    - "pokemon collection lot NM LP"
     - "pokemon tcg lot near mint"
-    - "pokemon bulk lot NM"
-    - "pokemon cards bundle NM"
-    - "pokemon collection near mint"
-    - "pokemon lot mint condition"
+    - "pokemon cards bulk NM collection"
+    - "pokemon vintage lot NM"
+    - "pokemon base set lot collection"
+    - "pokemon lot PSA BGS collection"
+    - "pokemon cards estate collection"
+    - "pokemon binder collection NM"
 
-  # Condition filtering — the monitor requires at least one positive condition
-  # keyword in the title (NM, near mint, lightly played, PSA/BGS, etc.) AND
-  # rejects any title with explicit bad-condition keywords (HP, damaged, etc.).
-  # These are hard-coded in monitor.py; the list below is for extra exclusions.
-
-  # Additional listing-level exclude keywords (on top of condition logic)
+  # Condition logic is enforced in code: requires NM/LP/near mint/PSA etc. in
+  # the title, rejects HP/damaged/moderately played. These are extra exclusions.
   exclude_keywords:
     - "repack"
     - "mystery"
@@ -179,4 +174,56 @@ pokemon_lots:
     - "fake"
     - "binder pages only"
     - "sleeves only"
+    - "empty"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Scanner 4: Sports Card Lots
+# ══════════════════════════════════════════════════════════════════════════════
+sports_card_lots:
+  enabled: true
+
+  # Target range: $1,000–$3,000 — sweet spot for flip/grade collections
+  min_price: 1000.00
+  max_price: 3000.00
+
+  # Pages per search query (100 results/page). 3 pages covers ~300 results
+  # per query, more than enough at this price point.
+  max_pages: 3
+
+  # Search strategy: mix broad sport-specific queries with targeted ones for
+  # cards most worth grading (Chrome, Prizm, vintage Topps).
+  # The monitor filters to listings that look like collections (lot/collection/
+  # estate/bundle keywords in title) and rejects bad-condition signals.
+  search_queries:
+    # Broad sport collections
+    - "baseball cards collection lot estate"
+    - "football cards collection lot estate"
+    - "basketball cards collection lot estate"
+    - "sports cards collection lot estate"
+    # Vintage — highest grading upside
+    - "baseball cards vintage collection lot"
+    - "topps baseball vintage collection lot"
+    - "football cards vintage collection lot"
+    # Modern premium products most worth grading
+    - "topps chrome collection lot"
+    - "prizm football basketball lot collection"
+    - "bowman chrome collection lot"
+    - "panini select lot collection"
+    # Graded lot flips (already graded, may be underpriced)
+    - "PSA graded cards lot collection sports"
+    - "BGS graded cards collection lot sports"
+    # Rookie-heavy lots
+    - "rookie cards lot collection baseball football"
+
+  # Rejects listings that contain any of these
+  exclude_keywords:
+    - "repack"
+    - "mystery"
+    - "custom"
+    - "reproduction"
+    - "fake"
+    - "non sport"
+    - "non-sport"
+    - "wrestling"
     - "empty"
