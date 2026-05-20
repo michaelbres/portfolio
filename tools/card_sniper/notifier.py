@@ -136,7 +136,7 @@ def send_startup_message(webhook_url: str, player_names: list[str]) -> None:
         "embeds": [{
             "title": "Card Sniper Started",
             "description": (
-                f"Watching **{len(player_names)}** players for 2025 Topps Chrome NFL:\n\n"
+                f"Watching **{len(player_names)}** player(s) / scanner(s):\n\n"
                 f"{player_list}"
             ),
             "color": 0x5865F2,
@@ -147,3 +147,81 @@ def send_startup_message(webhook_url: str, player_names: list[str]) -> None:
         requests.post(webhook_url, json=payload, timeout=10)
     except requests.RequestException as e:
         log.warning("Could not send startup message: %s", e)
+
+
+# ── Pokemon lot alerts ─────────────────────────────────────────────────────────
+
+_POKEMON_EMBED_COLOR = 0xFFCC00  # Pokemon yellow
+
+
+def send_pokemon_lot_alert(webhook_url: str, listing: dict) -> bool:
+    """Post a Discord embed for a Pokemon lot find."""
+    price = listing["price"]
+    title = listing["title"]
+    url = listing.get("url", "")
+    image_url = listing.get("image_url")
+    listed_at: Optional[datetime] = listing.get("listed_at")
+    condition = listing.get("condition", "Unknown")
+
+    description_lines = [
+        f"**${price:.2f}** BIN — Pokemon cards lot",
+        f"Condition: {condition}",
+    ]
+    if listed_at:
+        description_lines.append(f"Listed: <t:{int(listed_at.timestamp())}:R>")
+
+    embed = {
+        "title": "🃏  Pokemon Lot Found",
+        "description": "\n".join(description_lines),
+        "color": _POKEMON_EMBED_COLOR,
+        "fields": [
+            {"name": "Listing Title", "value": title[:256], "inline": False},
+            {
+                "name": "Tip",
+                "value": "Verify condition is LP or better in photos. Check seller feedback before buying.",
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Card Monitor · Pokemon Lot Scanner · BIN $300+"},
+    }
+
+    if url:
+        embed["url"] = url
+    if image_url:
+        embed["image"] = {"url": image_url}
+
+    payload = {"username": "Card Monitor", "embeds": [embed]}
+
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        log.info("Discord Pokemon lot alert sent ($%.2f)", price)
+        return True
+    except requests.RequestException as e:
+        log.error("Discord webhook failed: %s", e)
+        return False
+
+
+def send_ntfy_pokemon_lot_alert(topic: str, listing: dict) -> bool:
+    price = listing["price"]
+    title = listing["title"]
+    url = listing.get("url", "")
+
+    ntfy_url = topic if topic.startswith("http") else f"https://ntfy.sh/{topic}"
+
+    headers = {
+        "Title": f"Pokemon Lot ${price:.2f} — Card Monitor",
+        "Priority": "high",
+        "Tags": "pikachu,rotating_light",
+        "Click": url or "",
+    }
+    body = f"${price:.2f} BIN Pokemon lot — verify LP+ condition in photos\n{title[:200]}"
+
+    try:
+        resp = requests.post(ntfy_url, data=body.encode("utf-8"), headers=headers, timeout=10)
+        resp.raise_for_status()
+        log.info("ntfy Pokemon lot alert sent ($%.2f)", price)
+        return True
+    except requests.RequestException as e:
+        log.error("ntfy push failed: %s", e)
+        return False

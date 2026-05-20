@@ -1,90 +1,182 @@
-# ── Card Sniper Configuration ─────────────────────────────────────────────────
-# Monitors eBay for 2025 Topps Chrome NFL listings that may be mislabeled
-# variation cards priced as base cards.
+# ── Card Monitor Configuration ────────────────────────────────────────────────
+# Runs three scanners in one process:
+#   1. Chrome Mislabel Sniper  — cheap Chrome listings that may be unlabeled
+#                                lightboard / image-variation SPs
+#   2. Chrome Mispriced Sniper — labeled lightboard/variation cards priced below
+#                                their actual market value
+#   3. Pokemon Lot Scanner     — BIN lots in LP or better condition, $300+
 
-# ── Notifications (configure at least one) ───────────────────────────────────
+# ── Credentials ───────────────────────────────────────────────────────────────
 
-# ntfy.sh — easiest option for phone alerts, zero account needed
-# 1. Install "ntfy" from App Store or Google Play
-# 2. Pick any unique topic name (treat it like a password — don't share it)
-# 3. In the app: tap + → enter your topic name → Subscribe
-# 4. Paste that same topic name here
-ntfy_topic: "card-sniper-7492030583929299483"
-
-# Discord webhook — rich embeds with card image + variation notes
-# Create one at: Server Settings → Integrations → Webhooks
-discord_webhook_url: "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
-
-# eBay App ID (Client ID from developer.ebay.com)
-# Free to register — only needs Finding API (no OAuth required for searches)
+# eBay App ID (Client ID from developer.ebay.com) — free to register
+# Only the Finding API is used; no OAuth token required.
 ebay_app_id: "PASTE_YOUR_EBAY_APP_ID_HERE"
 
-# How often to check for new listings (seconds)
-# eBay limits: ~5000 calls/day on free tier → safe floor is 60s
-poll_interval_seconds: 60
+# ── Notifications (configure at least one) ────────────────────────────────────
 
-# Maximum price to alert on (dollars). Listings above this are skipped.
-# Per-player overrides below take precedence over this global cap.
-global_max_price: 30.00   # alert on anything under $30
+# ntfy.sh push notifications — easiest setup, works instantly
+# 1. Install "ntfy" from App Store / Google Play
+# 2. Pick any unique topic name (treat it like a password)
+# 3. In app: + → enter topic name → Subscribe
+ntfy_topic: "card-sniper-7492030583929299483"
 
-# Only alert on "Buy It Now" listings (excludes auctions where price rises)
-buy_it_now_only: true
+# Discord webhook — rich embeds with card image, price, variation notes
+# Server Settings → Integrations → Webhooks → New Webhook → Copy URL
+discord_webhook_url: "PASTE_YOUR_DISCORD_WEBHOOK_URL_HERE"
 
-# Listings seen in this file won't re-alert on restart
+# ── Timing ────────────────────────────────────────────────────────────────────
+
+# Seconds between full scan cycles. Floor ~60s to stay inside eBay rate limits.
+# With 4 players × 3 searches + 3 Pokemon queries = ~15 calls per cycle.
+poll_interval_seconds: 90
+
+# Deduplication file — listings seen here won't re-alert on restart
 seen_ids_file: "seen_ids.txt"
 
-# ── Players to watch ──────────────────────────────────────────────────────────
-# Each entry needs:
-#   name        - Player name as it would appear in an eBay listing title
-#   max_price   - Alert if listed below this price (use null to use global_max_price)
-#   note        - Optional reminder about which variations to look for
-#
-# TWO variation types to snipe across all players:
-#   1. IMAGE VARIATION — completely different photo (away white jersey, sideline pose,
-#      no helmet), rainbow chrome border. Sellers list as plain base RC.
-#   2. LIGHT BOARD — same in-game action photo as base, BUT black background with
-#      a visible dotted/halftone grid pattern behind the player. Easy to miss.
-players:
-  - name: "Jaxson Dart"
-    max_price: 30.00
-    note: >
-      BASE = black solid background, blue home jersey, in-game throwing, helmet ON.
-      IMAGE VARIATION = rainbow chrome border, WHITE away jersey, sideline laughing, helmet OFF/holding helmet.
-      LIGHT BOARD = same throwing action photo BUT black dotted/halftone grid background (dot matrix behind player).
-      CAMO VARIATION = red/white/blue digital pixel camo border, blue jersey throwing — also a separate SP.
-      Any of the three are worth buying if listed as a plain base.
 
-  - name: "Malik Nabers"
-    max_price: 20.00
-    note: "RC — watch for image variation (away jersey/different pose) and light board (dot grid background). Send base card pic to update these notes."
+# ══════════════════════════════════════════════════════════════════════════════
+# Scanner 1 + 2: Topps Chrome NFL Variations
+# ══════════════════════════════════════════════════════════════════════════════
+chrome_variations:
+  enabled: true
 
-  - name: "Luther Burden"
-    max_price: 20.00
-    note: >
-      BASE = standard silver chrome border, dark navy Bears home jersey, helmet ON, in-game running with ball, plain background.
-      IMAGE VARIATION = rainbow chrome border, WHITE away jersey, sideline pose, NO helmet, no number visible.
-      LIGHT BOARD = same in-game running action (navy jersey, helmet on) BUT black dotted/halftone grid background behind player.
-      Both variations are worth multiples of base — buy either if listed as plain base RC.
+  # Base search terms prepended to every Chrome query
+  base_keywords: "2025 Topps Chrome NFL"
 
-  - name: "Abdul Carter"
-    max_price: 20.00
-    note: >
-      BASE = silver/gold chrome border, blue Giants home jersey #51, helmet ON, in-game running action, plain background.
-      IMAGE VARIATION = rainbow chrome border, WHITE away jersey #51, holding helmet, static sideline pose, face visible.
-      LIGHT BOARD = same in-game running action (blue jersey, helmet on) BUT black dotted/halftone grid background behind player.
-      Position label = 'Edge' on both base and variations. Buy either variation if listed as plain base RC.
+  # Global price cap for the *mislabel* sniper (used when a player has no
+  # per-player max_price set). Set this to roughly what a raw base RC costs.
+  global_max_price: 30.00
 
-# ── Search configuration ──────────────────────────────────────────────────────
-# Keywords always added to every search query
-base_keywords: "2025 Topps Chrome NFL"
+  # Keywords that kill a listing regardless of price — obvious junk filters
+  exclude_keywords:
+    - "repack"
+    - "mystery"
+    - "custom"
+    - "reproduction"
+    - "fake"
+    - "copy"
+    - "lot"
 
-# Keywords that must NOT be in the listing title (case-insensitive)
-# Helps filter obvious junk
-exclude_keywords:
-  - "lot"
-  - "repack"
-  - "mystery"
-  - "custom"
-  - "copy"
-  - "reproduction"
-  - "fake"
+  # ── Players ───────────────────────────────────────────────────────────────
+  # Fields per player:
+  #   name                   — as it appears in eBay titles (required)
+  #   max_price              — mislabel sniper: alert if priced under this
+  #                            (use null to fall back to global_max_price)
+  #   lightboard_max_price   — mispriced sniper: alert on labeled LIGHTBOARD
+  #                            cards priced under this (skip if 0 / omitted)
+  #   image_variation_max_price — same for labeled IMAGE VARIATION / IMAGE SP
+  #   note                   — visual tells shown in the Discord alert
+
+  players:
+    - name: "Jaxson Dart"
+      max_price: 30.00
+      lightboard_max_price: 80.00      # lightboard worth $120+; alert under $80
+      image_variation_max_price: 60.00 # image var worth $80+; alert under $60
+      note: >
+        BASE = plain silver chrome border, blue home jersey #14, in-game throwing pose,
+        helmet ON, solid plain background.
+
+        LIGHTBOARD = same in-game throwing action BUT with a visible black dotted/halftone
+        grid ("dot matrix") pattern in the background behind the player. Border looks the
+        same from a distance — zoom in on background texture. Worth ~$120-150+.
+
+        IMAGE VARIATION (SP) = completely different photo: rainbow chrome border,
+        WHITE away jersey, sideline pose with helmet OFF (holding or no helmet),
+        laughing/smiling shot. Rainbow shimmer border is the quickest visual tell.
+        Worth $80-100+.
+
+        CAMO VARIATION = red/white/blue digital pixel camo border, blue home jersey,
+        throwing pose — separate SP, also worth multiples of base.
+
+    - name: "Malik Nabers"
+      max_price: 20.00
+      lightboard_max_price: 60.00
+      image_variation_max_price: 45.00
+      note: >
+        BASE = silver chrome border, blue Giants home jersey, in-game running/catch pose,
+        helmet ON, solid background.
+
+        LIGHTBOARD = same action shot but background has a visible halftone/dot-grid
+        pattern. Look for tiny repeating dots in the dark background area.
+
+        IMAGE VARIATION = rainbow chrome border, white away jersey, different pose —
+        could be sideline, no helmet, or a catch in a different setting.
+
+    - name: "Luther Burden"
+      max_price: 20.00
+      lightboard_max_price: 55.00
+      image_variation_max_price: 40.00
+      note: >
+        BASE = standard silver chrome border, dark navy Bears home jersey, helmet ON,
+        in-game running with ball, plain solid background.
+
+        LIGHTBOARD = same running action (navy jersey, helmet on) BUT the background
+        has a black dotted/halftone grid pattern — the dot matrix is visible in the
+        dark space around the player. Same photo, different background treatment.
+
+        IMAGE VARIATION = rainbow chrome border, WHITE away Bears jersey, sideline
+        pose, NO helmet (holding helmet or not visible), face clearly visible.
+
+        Both variations worth multiples of base price — buy either if unlabeled.
+
+    - name: "Abdul Carter"
+      max_price: 20.00
+      lightboard_max_price: 55.00
+      image_variation_max_price: 40.00
+      note: >
+        BASE = silver/gold chrome border, blue Giants home jersey #51, helmet ON,
+        in-game rushing/pass-rush action, plain solid background.
+
+        LIGHTBOARD = same rushing action (blue jersey, helmet on) BUT the background
+        shows a halftone/dot-matrix grid pattern. Position label reads 'Edge'.
+
+        IMAGE VARIATION = rainbow chrome border, WHITE away jersey #51, holding
+        helmet, standing sideline pose, face visible, static not in-game.
+
+        Position label 'Edge' on all versions — buy any unlabeled variation.
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Scanner 3: Pokemon Card Lots
+# ══════════════════════════════════════════════════════════════════════════════
+pokemon_lots:
+  enabled: true
+
+  # Minimum price — only alert on lots $300 or more
+  min_price: 300.00
+  # No max price configured — we want all lots over $300
+
+  # How many eBay result pages to pull per search query (100 results/page).
+  # 5 pages = up to 500 results per query — covers the full active inventory
+  # for high-priced Pokemon lots. Increase if you see gaps.
+  max_pages: 5
+
+  # Search queries to run. Each is a separate eBay keyword search.
+  # Results are automatically deduplicated across queries.
+  search_queries:
+    - "pokemon cards lot NM"
+    - "pokemon cards lot near mint"
+    - "pokemon cards lot lightly played"
+    - "pokemon lot collection NM LP"
+    - "pokemon tcg lot NM"
+    - "pokemon tcg lot near mint"
+    - "pokemon bulk lot NM"
+    - "pokemon cards bundle NM"
+    - "pokemon collection near mint"
+    - "pokemon lot mint condition"
+
+  # Condition filtering — the monitor requires at least one positive condition
+  # keyword in the title (NM, near mint, lightly played, PSA/BGS, etc.) AND
+  # rejects any title with explicit bad-condition keywords (HP, damaged, etc.).
+  # These are hard-coded in monitor.py; the list below is for extra exclusions.
+
+  # Additional listing-level exclude keywords (on top of condition logic)
+  exclude_keywords:
+    - "repack"
+    - "mystery"
+    - "custom"
+    - "reproduction"
+    - "fake"
+    - "binder pages only"
+    - "sleeves only"
+    - "empty"

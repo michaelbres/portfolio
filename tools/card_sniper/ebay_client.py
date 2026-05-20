@@ -35,6 +35,101 @@ class EbayFindingClient:
             "X-EBAY-SOA-RESPONSE-DATA-FORMAT": "XML",
         })
 
+    def find_items(
+        self,
+        keywords: str,
+        max_price: Optional[float] = None,
+        min_price: Optional[float] = None,
+        buy_it_now_only: bool = True,
+        category_id: Optional[str] = None,
+        max_results: int = 100,
+        page: int = 1,
+    ) -> list[dict]:
+        """
+        Flexible item search. max_price=None means no upper limit.
+        Returns up to max_results (capped at 100 per eBay's limit per page).
+        """
+        fi = 0  # itemFilter index
+
+        params: dict[str, str] = {
+            "keywords": keywords,
+            "sortOrder": "StartTimeNewest",
+            "paginationInput.entriesPerPage": str(min(max_results, 100)),
+            "paginationInput.pageNumber": str(page),
+            f"itemFilter({fi}).name": "HideDuplicateItems",
+            f"itemFilter({fi}).value": "true",
+        }
+        fi += 1
+
+        if category_id:
+            params["categoryId"] = category_id
+
+        if max_price is not None:
+            params[f"itemFilter({fi}).name"] = "MaxPrice"
+            params[f"itemFilter({fi}).value"] = str(max_price)
+            params[f"itemFilter({fi}).paramName"] = "Currency"
+            params[f"itemFilter({fi}).paramValue"] = "USD"
+            fi += 1
+
+        if min_price is not None:
+            params[f"itemFilter({fi}).name"] = "MinPrice"
+            params[f"itemFilter({fi}).value"] = str(min_price)
+            params[f"itemFilter({fi}).paramName"] = "Currency"
+            params[f"itemFilter({fi}).paramValue"] = "USD"
+            fi += 1
+
+        params[f"itemFilter({fi}).name"] = "LocatedIn"
+        params[f"itemFilter({fi}).value"] = "US"
+        fi += 1
+
+        if buy_it_now_only:
+            params[f"itemFilter({fi}).name"] = "ListingType"
+            params[f"itemFilter({fi}).value"] = "FixedPrice"
+            fi += 1
+
+        params["outputSelector(0)"] = "PictureURLSuperSize"
+        params["outputSelector(1)"] = "SellerInfo"
+
+        try:
+            resp = self._session.get(_FINDING_URL, params=params, timeout=self.timeout)
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            log.error("eBay API request failed: %s", e)
+            return []
+
+        return self._parse_xml(resp.text)
+
+    def find_items_all_pages(
+        self,
+        keywords: str,
+        max_price: Optional[float] = None,
+        min_price: Optional[float] = None,
+        buy_it_now_only: bool = True,
+        category_id: Optional[str] = None,
+        max_pages: int = 5,
+    ) -> list[dict]:
+        """
+        Fetch up to max_pages × 100 results, paginating automatically.
+        Use for searches with no hard result cap (e.g. Pokemon lots).
+        """
+        all_items: list[dict] = []
+        for page in range(1, max_pages + 1):
+            page_items = self.find_items(
+                keywords=keywords,
+                max_price=max_price,
+                min_price=min_price,
+                buy_it_now_only=buy_it_now_only,
+                category_id=category_id,
+                max_results=100,
+                page=page,
+            )
+            all_items.extend(page_items)
+            if len(page_items) < 100:
+                break  # last page
+        return all_items
+
+    # ── Backward-compat wrapper used by sniper.py ─────────────────────────────
+
     def find_new_listings(
         self,
         keywords: str,
@@ -42,49 +137,15 @@ class EbayFindingClient:
         buy_it_now_only: bool = True,
         max_results: int = 20,
     ) -> list[dict]:
-        """
-        Search for recent BIN listings matching keywords under max_price.
-        Returns list of listing dicts with keys:
-          item_id, title, price, currency, url, condition, image_url, listed_at
-        """
-        params = {
-            "keywords": keywords,
-            "sortOrder": "StartTimeNewest",
-            "paginationInput.entriesPerPage": str(max_results),
-            "paginationInput.pageNumber": "1",
-            # Filter: US only (site 0), category 213 = Sports Trading Cards
-            "categoryId": "213",
-            # Only US listings
-            "itemFilter(0).name": "HideDuplicateItems",
-            "itemFilter(0).value": "true",
-            "itemFilter(1).name": "MaxPrice",
-            "itemFilter(1).value": str(max_price),
-            "itemFilter(1).paramName": "Currency",
-            "itemFilter(1).paramValue": "USD",
-            "itemFilter(2).name": "LocatedIn",
-            "itemFilter(2).value": "US",
-        }
+        return self.find_items(
+            keywords=keywords,
+            max_price=max_price,
+            buy_it_now_only=buy_it_now_only,
+            category_id="213",
+            max_results=max_results,
+        )
 
-        if buy_it_now_only:
-            params["itemFilter(3).name"] = "ListingType"
-            params["itemFilter(3).value"] = "FixedPrice"
-
-        # Also request output selectors for image + condition
-        params["outputSelector(0)"] = "PictureURLSuperSize"
-        params["outputSelector(1)"] = "SellerInfo"
-
-        try:
-            resp = self._session.get(
-                _FINDING_URL,
-                params=params,
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            log.error("eBay API request failed: %s", e)
-            return []
-
-        return self._parse_xml(resp.text)
+    # ── XML parsing ───────────────────────────────────────────────────────────
 
     def _parse_xml(self, xml_text: str) -> list[dict]:
         try:
@@ -95,7 +156,9 @@ class EbayFindingClient:
 
         ack = root.findtext(_tag("ack"))
         if ack not in ("Success", "Warning"):
-            error_msg = root.findtext(f".//{_tag('errorMessage')}/{_tag('error')}/{_tag('message')}")
+            error_msg = root.findtext(
+                f".//{_tag('errorMessage')}/{_tag('error')}/{_tag('message')}"
+            )
             log.error("eBay API error (ack=%s): %s", ack, error_msg)
             return []
 
@@ -105,34 +168,24 @@ class EbayFindingClient:
                 item_id = item.findtext(_tag("itemId"))
                 title = item.findtext(_tag("title"))
 
-                # Price
                 price_node = item.find(f".//{_tag('currentPrice')}")
                 if price_node is None:
-                    # BIN fallback
                     price_node = item.find(f".//{_tag('buyItNowPrice')}")
                 price = float(price_node.text) if price_node is not None else None
                 currency = price_node.get("currencyId", "USD") if price_node is not None else "USD"
 
-                # URL
                 url = item.findtext(_tag("viewItemURL"))
-
-                # Condition
                 condition = item.findtext(f".//{_tag('conditionDisplayName')}")
-
-                # Image
                 image_url = (
                     item.findtext(f".//{_tag('superSize')}")
                     or item.findtext(f".//{_tag('galleryURL')}")
                 )
 
-                # Listing time
                 listed_at_str = item.findtext(f".//{_tag('startTime')}")
                 listed_at: Optional[datetime] = None
                 if listed_at_str:
                     try:
-                        listed_at = datetime.fromisoformat(
-                            listed_at_str.replace("Z", "+00:00")
-                        )
+                        listed_at = datetime.fromisoformat(listed_at_str.replace("Z", "+00:00"))
                     except ValueError:
                         pass
 
